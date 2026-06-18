@@ -318,11 +318,16 @@ async function refreshWorkspace() {
 // SIDEBAR
 function renderSidebar() {
   const el = document.getElementById('proj-list');
-  el.innerHTML = db.projects.map(p => `
+  el.innerHTML = db.projects.map((p, index) => `
     <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(p.name)}</span>
       <span class="tag tag-${projectLocalPath(p)?'green':projectRepoUrl(p)?'blue':'gray'}" style="font-size:9px;padding:1px 5px">${projectLocalPath(p) ? 'local' : projectRepoUrl(p) ? 'github' : esc(p.type || 'manual')}</span>
+      <span class="proj-sidebar-actions">
+        ${projectLocalPath(p) ? `<button class="sidebar-icon-btn" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open folder"><i class="ti ti-folder"></i></button>` : ''}
+        <button class="sidebar-icon-btn" data-action="move-project" data-id="${esc(p.id)}" data-direction="up" title="Move up" ${index === 0 ? 'disabled' : ''}><i class="ti ti-chevron-up"></i></button>
+        <button class="sidebar-icon-btn" data-action="move-project" data-id="${esc(p.id)}" data-direction="down" title="Move down" ${index === db.projects.length - 1 ? 'disabled' : ''}><i class="ti ti-chevron-down"></i></button>
+      </span>
     </div>
   `).join('');
 
@@ -393,6 +398,37 @@ function prepareProjectModal(projectId = null) {
 function openProjectSettings(id) {
   prepareProjectModal(id);
   document.getElementById('modal-project').classList.add('open');
+}
+
+function openProjectFiles(id) {
+  selectedProjectId = id;
+  showPanel('files');
+  const sel = document.getElementById('file-proj-sel');
+  if (sel) {
+    sel.value = id;
+    renderFileTree();
+  }
+}
+
+function openProjectNotes(id) {
+  selectedProjectId = id;
+  showPanel('notes');
+  const filter = document.getElementById('note-filter-proj');
+  if (filter) {
+    filter.value = id;
+    renderNotesSidebar();
+  }
+}
+
+function openProjectNote(id) {
+  const note = db.notes.find(n => n.id === id);
+  if (!note) return;
+  selectedProjectId = note.projId || selectedProjectId;
+  showPanel('notes');
+  const filter = document.getElementById('note-filter-proj');
+  if (filter && note.projId) filter.value = note.projId;
+  renderNotesSidebar();
+  openNote(id);
 }
 
 // PROJECT
@@ -477,6 +513,20 @@ function deleteProject(id) {
   renderOverview();
 }
 
+function moveProject(id, direction) {
+  const index = db.projects.findIndex(p => p.id === id);
+  if (index < 0) return;
+  const next = direction === 'up' ? index - 1 : index + 1;
+  if (next < 0 || next >= db.projects.length) return;
+  const [item] = db.projects.splice(index, 1);
+  db.projects.splice(next, 0, item);
+  save();
+  renderSidebar();
+  if (currentPanel === 'overview') renderOverview();
+  if (currentPanel === 'project') renderProjectDetail();
+  if (currentPanel === 'files') renderFileProjSel();
+}
+
 async function openProject(id, target) {
   const p = proj(id);
   const localPath = projectLocalPath(p);
@@ -496,6 +546,7 @@ function projectActions(p, compact = false) {
   return `
     ${repoUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(repoUrl)}" title="Open GitHub repository"><i class="ti ti-brand-github"></i>${compact ? '' : ' GitHub'}</button>` : ''}
     ${deployUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(deployUrl)}" title="Open deployment"><i class="ti ti-world"></i>${compact ? '' : ' Deployment'}</button>` : ''}
+    <button class="btn ${size}" data-action="open-project-files" data-id="${esc(p.id)}" title="Browse project files"><i class="ti ti-folder-code"></i>${compact ? '' : ' Files'}</button>
     ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i>${compact ? '' : ' Terminal'}</button>` : ''}
     ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open in Finder"><i class="ti ti-folder"></i>${compact ? '' : ' Finder'}</button>` : ''}
     <button class="btn ${size}" data-action="open-project-settings" data-id="${esc(p.id)}" title="Project settings"><i class="ti ti-settings"></i>${compact ? '' : ' Settings'}</button>
@@ -594,8 +645,9 @@ function renderProjectDetail() {
   const repoUrl = projectRepoUrl(p);
   const projectCommits = [...db.commits].filter(c => c.projId === p.id).sort((a,b) => b.date - a.date);
   const projectTasks = db.tasks.filter(t => t.projId === p.id && !t.done);
-  const projectNotes = db.notes.filter(n => n.projId === p.id);
+  const projectNotes = [...db.notes].filter(n => n.projId === p.id).sort((a,b) => b.updated - a.updated);
   const last = projectCommits[0];
+  const tagColors = {idea:'blue',todo:'amber',bug:'red',feature:'green',research:'purple',meeting:'teal'};
   el.innerHTML = `
     <div class="project-hero">
       <div class="project-identity">
@@ -634,6 +686,36 @@ function renderProjectDetail() {
           <div><span>Ahead / behind</span><strong>${p.git.ahead || 0} / ${p.git.behind || 0}</strong></div>
           <div><span>Remote</span><strong>${p.git.remoteUrl || repoUrl ? esc(cleanGithubUrl(p.git.remoteUrl || repoUrl)) : 'Not found'}</strong></div>
         </div>` : `<div class="empty-state" style="padding:20px"><i class="ti ti-git-branch"></i><p>${localPath ? 'No git repo found' : 'Attach a local repo to sync commits'}</p></div>`}
+      </div>
+    </div>
+    <div class="grid2 mb16">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-notebook"></i> Project notes</span>
+          <button class="btn btn-sm" data-action="open-project-notes" data-id="${esc(p.id)}">View all <i class="ti ti-arrow-right"></i></button>
+        </div>
+        <div class="project-note-list">
+          ${projectNotes.length ? projectNotes.slice(0, 5).map(note => `<div class="project-note-item" data-action="open-project-note" data-id="${esc(note.id)}">
+            <div>
+              <div class="project-note-title">${esc(note.title || 'Untitled')}</div>
+              <div class="project-note-preview">${esc((note.body || '').replace(/[#*`\[\]]/g,'').replace(/\n/g,' ').slice(0, 120))}</div>
+            </div>
+            <div class="project-note-meta">
+              ${note.tag ? `<span class="tag tag-${tagColors[note.tag]||'gray'}" style="font-size:10px">${esc(note.tag)}</span>` : ''}
+              <span>${timeAgo(note.updated)}</span>
+            </div>
+          </div>`).join('') : '<div class="empty-state" style="padding:20px"><i class="ti ti-notebook"></i><p>No notes for this project yet</p></div>'}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-folder-code"></i> Files</span>
+          <button class="btn btn-sm" data-action="open-project-files" data-id="${esc(p.id)}">Browse files <i class="ti ti-arrow-right"></i></button>
+        </div>
+        <div class="info-list">
+          <div><span>Source</span><strong>${localPath ? esc(localPath) : 'No local path attached'}</strong></div>
+          <div><span>Browser</span><strong>${localPath ? 'Open this project in the in-app file browser' : 'Attach a local path in project settings'}</strong></div>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -910,9 +992,13 @@ function setCommitFilter(f) {
 // FILES
 function renderFileProjSel() {
   const sel = document.getElementById('file-proj-sel');
+  const current = sel.value || selectedProjectId || '';
   sel.innerHTML = '<option value="">Select project</option>';
   db.projects.forEach(p => { const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o); });
-  if (db.projects.length) { sel.value = db.projects[0].id; renderFileTree(); }
+  if (db.projects.length) {
+    sel.value = db.projects.some(p => p.id === current) ? current : db.projects[0].id;
+    renderFileTree();
+  }
 }
 
 async function renderFileTree() {
@@ -1198,6 +1284,10 @@ function bindEvents() {
     else if (action === 'choose-project-folder') chooseProjectFolder();
     else if (action === 'open-project-path') openProject(target.dataset.id, target.dataset.target);
     else if (action === 'open-project-settings') openProjectSettings(target.dataset.id);
+    else if (action === 'open-project-files') openProjectFiles(target.dataset.id);
+    else if (action === 'open-project-notes') openProjectNotes(target.dataset.id);
+    else if (action === 'open-project-note') openProjectNote(target.dataset.id);
+    else if (action === 'move-project') moveProject(target.dataset.id, target.dataset.direction);
     else if (action === 'open-external') openExternal(target.dataset.url);
     else if (action === 'save-settings') saveSettings();
     else if (action === 'test-ollama') testOllama();
