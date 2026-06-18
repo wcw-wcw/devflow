@@ -1,581 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DevFlow — Dev Dashboard</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
-<style>
-  :root {
-    --bg-primary: #ffffff;
-    --bg-secondary: #f5f5f4;
-    --bg-tertiary: #eeede9;
-    --text-primary: #1c1c1a;
-    --text-secondary: #5f5e5a;
-    --text-tertiary: #888780;
-    --border-light: rgba(0,0,0,0.10);
-    --border-mid: rgba(0,0,0,0.18);
-    --border-strong: rgba(0,0,0,0.28);
-    --accent: #185FA5;
-    --accent-hover: #0C447C;
-    --accent-light: #E6F1FB;
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --mono: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-primary: #1c1c1a;
-      --bg-secondary: #242422;
-      --bg-tertiary: #2c2c2a;
-      --text-primary: #f0ede8;
-      --text-secondary: #b4b2a9;
-      --text-tertiary: #888780;
-      --border-light: rgba(255,255,255,0.08);
-      --border-mid: rgba(255,255,255,0.14);
-      --border-strong: rgba(255,255,255,0.22);
-      --accent: #378ADD;
-      --accent-hover: #85B7EB;
-      --accent-light: #042C53;
-    }
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: var(--font); background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; height: 100vh; overflow: hidden; }
+import { invoke as tauriInvokeCore } from '@tauri-apps/api/core';
 
-  /* Layout */
-  .app { display: flex; height: 100vh; }
-  .sidebar { width: 230px; min-width: 230px; background: var(--bg-secondary); border-right: 0.5px solid var(--border-light); display: flex; flex-direction: column; overflow: hidden; }
-  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-  .topbar { background: var(--bg-secondary); border-bottom: 0.5px solid var(--border-light); padding: 0 20px; height: 54px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-  .content { flex: 1; overflow-y: auto; padding: 20px; }
-
-  /* Sidebar */
-  .sidebar-logo { padding: 16px; border-bottom: 0.5px solid var(--border-light); display: flex; align-items: center; gap: 10px; }
-  .sidebar-logo .logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; flex-shrink: 0; }
-  .sidebar-logo span { font-size: 15px; font-weight: 600; letter-spacing: -0.2px; }
-  .sidebar-logo .version { font-size: 10px; color: var(--text-tertiary); font-weight: 400; }
-  .sidebar-section { padding: 8px 8px 0; }
-  .sidebar-label { font-size: 10px; color: var(--text-tertiary); padding: 8px 8px 4px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
-  .sidebar-item { display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: var(--radius-md); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: background .12s, color .12s; user-select: none; }
-  .sidebar-item:hover { background: var(--bg-primary); color: var(--text-primary); }
-  .sidebar-item.active { background: var(--bg-primary); color: var(--text-primary); font-weight: 500; }
-  .sidebar-item i { font-size: 16px; width: 18px; flex-shrink: 0; }
-  .sidebar-badge { margin-left: auto; background: var(--bg-tertiary); color: var(--text-tertiary); font-size: 10px; padding: 1px 6px; border-radius: 20px; font-weight: 500; }
-  .sidebar-item.active .sidebar-badge { background: var(--accent-light); color: var(--accent); }
-  .sidebar-projects { flex: 1; overflow-y: auto; padding: 8px; }
-  .proj-sidebar-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: var(--radius-md); cursor: pointer; font-size: 13px; color: var(--text-secondary); transition: background .12s; }
-  .proj-sidebar-item:hover { background: var(--bg-primary); color: var(--text-primary); }
-  .proj-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .add-proj-btn { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: var(--radius-md); cursor: pointer; font-size: 13px; color: var(--text-tertiary); width: 100%; background: none; border: none; font-family: var(--font); transition: background .12s, color .12s; }
-  .add-proj-btn:hover { background: var(--bg-primary); color: var(--text-secondary); }
-
-  /* Topbar */
-  .topbar-title { font-size: 15px; font-weight: 600; }
-  .topbar-badge { font-size: 11px; background: var(--bg-tertiary); border: 0.5px solid var(--border-light); color: var(--text-tertiary); padding: 2px 9px; border-radius: 20px; }
-  .runtime-badge { font-size: 11px; color: var(--text-tertiary); display: inline-flex; align-items: center; gap: 5px; }
-  .runtime-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-tertiary); }
-  .runtime-dot.live { background: #639922; }
-  .spacer { flex: 1; }
-
-  /* Buttons */
-  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border-radius: var(--radius-md); border: 0.5px solid var(--border-mid); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-size: 13px; font-family: var(--font); transition: background .12s; white-space: nowrap; }
-  .btn:hover { background: var(--bg-secondary); }
-  .btn:active { transform: scale(0.98); }
-  .btn i { font-size: 14px; }
-  .btn-sm { padding: 4px 9px; font-size: 12px; }
-  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-  .btn-danger { color: #A32D2D; border-color: rgba(162,45,45,0.3); }
-  .btn-danger:hover { background: #FCEBEB; }
-
-  /* Panels */
-  .panel { display: none; }
-  .panel.active { display: block; }
-  .panel-fill { display: none; height: calc(100vh - 54px); overflow: hidden; }
-  .panel-fill.active { display: flex; }
-
-  /* Cards */
-  .card { background: var(--bg-primary); border: 0.5px solid var(--border-light); border-radius: var(--radius-lg); padding: 16px 18px; }
-  .card + .card { margin-top: 14px; }
-  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .card-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
-  .card-title i { font-size: 15px; }
-
-  /* Grid */
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-
-  /* Stat cards */
-  .stat-card { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 14px 16px; }
-  .stat-label { font-size: 11px; color: var(--text-tertiary); margin-bottom: 5px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
-  .stat-val { font-size: 26px; font-weight: 600; line-height: 1; }
-
-  /* Tags */
-  .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
-  .tag-blue { background: #E6F1FB; color: #185FA5; }
-  .tag-green { background: #EAF3DE; color: #3B6D11; }
-  .tag-amber { background: #FAEEDA; color: #854F0B; }
-  .tag-red { background: #FCEBEB; color: #A32D2D; }
-  .tag-gray { background: var(--bg-tertiary); color: var(--text-secondary); border: 0.5px solid var(--border-light); }
-  .tag-purple { background: #EEEDFE; color: #3C3489; }
-  .tag-teal { background: #E1F5EE; color: #0F6E56; }
-  @media (prefers-color-scheme: dark) {
-    .tag-blue { background: #042C53; color: #85B7EB; }
-    .tag-green { background: #173404; color: #97C459; }
-    .tag-amber { background: #412402; color: #EF9F27; }
-    .tag-red { background: #501313; color: #F09595; }
-    .tag-purple { background: #26215C; color: #AFA9EC; }
-    .tag-teal { background: #04342C; color: #5DCAA5; }
-  }
-
-  /* Commits */
-  .commit-list { display: flex; flex-direction: column; gap: 1px; }
-  .commit-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: var(--radius-md); cursor: default; transition: background .12s; }
-  .commit-item:hover { background: var(--bg-secondary); }
-  .commit-hash { font-family: var(--mono); font-size: 11px; color: var(--text-tertiary); width: 58px; flex-shrink: 0; padding-top: 2px; }
-  .commit-msg { font-size: 13px; flex: 1; line-height: 1.4; }
-  .commit-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
-
-  /* Notes */
-  .notes-layout { display: grid; grid-template-columns: 240px 1fr; width: 100%; height: 100%; overflow: hidden; }
-  .notes-sidebar { border-right: 0.5px solid var(--border-light); padding: 12px; overflow-y: auto; background: var(--bg-secondary); }
-  .notes-editor { padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; background: var(--bg-primary); }
-  .note-card { padding: 12px; border-radius: var(--radius-md); cursor: pointer; transition: background .12s; border: 0.5px solid transparent; margin-bottom: 4px; }
-  .note-card:hover { background: var(--bg-primary); border-color: var(--border-light); }
-  .note-card.selected { background: var(--bg-primary); border-color: var(--border-mid); }
-  .note-title { font-size: 13px; font-weight: 500; margin-bottom: 3px; }
-  .note-preview { font-size: 12px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .note-foot { font-size: 11px; color: var(--text-tertiary); margin-top: 6px; display: flex; align-items: center; gap: 6px; }
-
-  /* Forms */
-  input[type=text], input[type=url], input[type=password], textarea, select {
-    width: 100%;
-    border: 0.5px solid var(--border-mid);
-    border-radius: var(--radius-md);
-    padding: 8px 12px;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font-family: var(--font);
-    font-size: 14px;
-    outline: none;
-    transition: border-color .12s;
-  }
-  input:focus, textarea:focus, select:focus { border-color: var(--accent); }
-  textarea { resize: vertical; line-height: 1.6; }
-  .form-group { margin-bottom: 14px; }
-  .form-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; display: block; font-weight: 500; }
-
-  /* Search bar */
-  .search-bar { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border: 0.5px solid var(--border-light); border-radius: var(--radius-md); padding: 7px 12px; margin-bottom: 12px; }
-  .search-bar input { border: none; background: none; color: var(--text-primary); font-size: 13px; width: 100%; outline: none; font-family: var(--font); padding: 0; }
-  .search-bar i { color: var(--text-tertiary); font-size: 15px; flex-shrink: 0; }
-
-  /* Agenda */
-  .agenda-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: var(--radius-md); background: var(--bg-primary); border: 0.5px solid var(--border-light); margin-bottom: 6px; }
-  .agenda-check { width: 18px; height: 18px; border-radius: 4px; border: 1.5px solid var(--border-strong); flex-shrink: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all .12s; margin-top: 2px; }
-  .agenda-check.done { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .agenda-check i { font-size: 11px; }
-  .agenda-text { font-size: 13px; line-height: 1.5; }
-  .agenda-text.done-text { color: var(--text-tertiary); text-decoration: line-through; }
-  .agenda-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-
-  /* File tree */
-  .file-tree { font-family: var(--mono); font-size: 12px; }
-  .file-item { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--radius-sm); cursor: pointer; color: var(--text-secondary); transition: background .1s; }
-  .file-item:hover { background: var(--bg-secondary); color: var(--text-primary); }
-  .file-item.dir-item { font-weight: 500; color: var(--text-primary); }
-  .file-content-area { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 16px; font-family: var(--mono); font-size: 12px; line-height: 1.7; overflow: auto; white-space: pre; color: var(--text-secondary); min-height: 200px; max-height: 400px; border: 0.5px solid var(--border-light); }
-
-  /* Modal */
-  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .15s; }
-  .modal-bg.open { opacity: 1; pointer-events: all; }
-  .modal { background: var(--bg-primary); border-radius: var(--radius-lg); border: 0.5px solid var(--border-mid); padding: 24px; width: 460px; max-width: 95vw; transform: translateY(8px); transition: transform .15s; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
-  .modal-bg.open .modal { transform: translateY(0); }
-  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 18px; display: flex; align-items: center; gap: 8px; }
-  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; padding-top: 16px; border-top: 0.5px solid var(--border-light); }
-
-  /* Color picker */
-  .color-swatch { width: 24px; height: 24px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: border-color .1s, transform .1s; }
-  .color-swatch:hover { transform: scale(1.1); }
-  .color-swatch.active { border-color: var(--text-primary); }
-
-  /* AI Chat */
-  .ai-messages { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding: 4px 0; }
-  .ai-msg { padding: 10px 14px; border-radius: var(--radius-lg); font-size: 13px; line-height: 1.6; max-width: 82%; }
-  .ai-msg.assistant { background: var(--bg-secondary); color: var(--text-primary); align-self: flex-start; border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px; }
-  .ai-msg.user { background: var(--accent); color: #fff; align-self: flex-end; border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg); }
-  .ai-msg.thinking { color: var(--text-tertiary); font-style: italic; }
-  .quick-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; background: var(--bg-secondary); border: 0.5px solid var(--border-light); color: var(--text-secondary); cursor: pointer; font-size: 12px; font-family: var(--font); transition: all .12s; white-space: nowrap; }
-  .quick-btn:hover { background: var(--bg-primary); border-color: var(--border-mid); color: var(--text-primary); }
-
-  /* Misc */
-  .empty-state { text-align: center; padding: 48px 20px; color: var(--text-tertiary); }
-  .empty-state i { font-size: 40px; margin-bottom: 12px; display: block; opacity: .5; }
-  .empty-state p { font-size: 14px; }
-  .empty-state .sub { font-size: 12px; margin-top: 4px; }
-  .divider { border: none; border-top: 0.5px solid var(--border-light); margin: 12px 0; }
-  .progress-bar { height: 3px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; margin-top: 8px; }
-  .progress-fill { height: 100%; border-radius: 2px; background: var(--accent); }
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
-  .tooltip { position: relative; }
-  .tooltip:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--text-primary); color: var(--bg-primary); font-size: 11px; padding: 4px 8px; border-radius: var(--radius-sm); white-space: nowrap; pointer-events: none; z-index: 99; }
-  .row { display: flex; align-items: center; gap: 10px; }
-  .flex1 { flex: 1; }
-  .mt8 { margin-top: 8px; }
-  .mt12 { margin-top: 12px; }
-  .mt16 { margin-top: 16px; }
-  .mb8 { margin-bottom: 8px; }
-  .mb12 { margin-bottom: 12px; }
-  .mb16 { margin-bottom: 16px; }
-</style>
-</head>
-<body>
-
-<div class="app">
-
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <div class="sidebar-logo">
-      <div class="logo-icon"><i class="ti ti-terminal-2"></i></div>
-      <div>
-        <div><span>DevFlow</span></div>
-        <div class="version">dev dashboard</div>
-      </div>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-label">Workspace</div>
-      <div class="sidebar-item active" onclick="showPanel('overview')" id="nav-overview">
-        <i class="ti ti-layout-dashboard"></i> Overview
-        <span class="sidebar-badge" id="badge-overview"></span>
-      </div>
-      <div class="sidebar-item" onclick="showPanel('agenda')" id="nav-agenda">
-        <i class="ti ti-checklist"></i> Agenda
-        <span class="sidebar-badge" id="badge-agenda"></span>
-      </div>
-      <div class="sidebar-item" onclick="showPanel('notes')" id="nav-notes">
-        <i class="ti ti-notebook"></i> Notes
-        <span class="sidebar-badge" id="badge-notes"></span>
-      </div>
-      <div class="sidebar-item" onclick="showPanel('commits')" id="nav-commits">
-        <i class="ti ti-git-commit"></i> Commits
-        <span class="sidebar-badge" id="badge-commits"></span>
-      </div>
-      <div class="sidebar-item" onclick="showPanel('files')" id="nav-files">
-        <i class="ti ti-folder-code"></i> Files
-        <span class="sidebar-badge" id="badge-files"></span>
-      </div>
-      <div class="sidebar-item" onclick="showPanel('ai')" id="nav-ai">
-        <i class="ti ti-brain"></i> AI Assistant
-      </div>
-    </div>
-
-    <div class="sidebar-projects">
-      <div class="sidebar-label">Projects</div>
-      <div id="proj-list"></div>
-      <button class="add-proj-btn" onclick="openModal('modal-project')">
-        <i class="ti ti-plus"></i> Add project
-      </button>
-    </div>
-  </div>
-
-  <!-- MAIN -->
-  <div class="main">
-    <div class="topbar">
-      <span class="topbar-title" id="topbar-title">Overview</span>
-      <span class="topbar-badge" id="topbar-badge"></span>
-      <span class="runtime-badge" id="runtime-badge"><span class="runtime-dot"></span><span>browser only</span></span>
-      <div class="spacer"></div>
-      <button class="btn btn-sm" onclick="openModal('modal-project')"><i class="ti ti-plus"></i> Add project</button>
-      <button class="btn btn-sm btn-primary" id="topbar-action-btn" onclick="topbarAction()">
-        <i class="ti ti-refresh"></i> <span id="topbar-action-label">Refresh</span>
-      </button>
-    </div>
-
-    <!-- OVERVIEW -->
-    <div class="panel active content" id="panel-overview">
-      <div class="grid4 mb16">
-        <div class="stat-card"><div class="stat-label">Projects</div><div class="stat-val" id="stat-projects">0</div></div>
-        <div class="stat-card"><div class="stat-label">Open tasks</div><div class="stat-val" id="stat-tasks">0</div></div>
-        <div class="stat-card"><div class="stat-label">Notes</div><div class="stat-val" id="stat-notes">0</div></div>
-        <div class="stat-card"><div class="stat-label">Commits logged</div><div class="stat-val" id="stat-commits">0</div></div>
-      </div>
-      <div class="grid2 mb16">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-git-commit"></i> Recent commits</span>
-            <button class="btn btn-sm" onclick="showPanel('commits')">View all <i class="ti ti-arrow-right"></i></button>
-          </div>
-          <div id="ov-commits" class="commit-list"></div>
-        </div>
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-checklist"></i> Open tasks</span>
-            <button class="btn btn-sm" onclick="showPanel('agenda')">View all <i class="ti ti-arrow-right"></i></button>
-          </div>
-          <div id="ov-tasks"></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title"><i class="ti ti-stack"></i> All projects</span>
-        </div>
-        <div id="ov-projects"></div>
-      </div>
-    </div>
-
-    <!-- AGENDA -->
-    <div class="panel content" id="panel-agenda">
-      <div class="row mb16">
-        <input type="text" id="task-input" placeholder="Add a task… (Enter to save)" style="flex:1" onkeydown="if(event.key==='Enter')addTask()">
-        <select id="task-proj" style="width:160px">
-          <option value="">No project</option>
-        </select>
-        <select id="task-priority" style="width:115px">
-          <option value="normal">Normal</option>
-          <option value="high">High priority</option>
-          <option value="low">Low priority</option>
-        </select>
-        <button class="btn btn-primary" onclick="addTask()"><i class="ti ti-plus"></i> Add</button>
-      </div>
-      <div class="row mb12" style="flex-wrap:wrap;gap:6px">
-        <button class="btn btn-sm" id="tf-all" onclick="setFilter('all')">All</button>
-        <button class="btn btn-sm" id="tf-open" onclick="setFilter('open')">Open</button>
-        <button class="btn btn-sm" id="tf-done" onclick="setFilter('done')">Done</button>
-        <button class="btn btn-sm" id="tf-high" onclick="setFilter('high')">High priority</button>
-        <select id="tf-proj" style="width:150px;font-size:12px;padding:4px 8px" onchange="renderAgenda()">
-          <option value="">All projects</option>
-        </select>
-        <div class="spacer"></div>
-        <button class="btn btn-sm btn-danger" onclick="clearDone()"><i class="ti ti-trash"></i> Clear done</button>
-      </div>
-      <div id="agenda-list"></div>
-    </div>
-
-    <!-- NOTES -->
-    <div class="panel-fill" id="panel-notes">
-      <div class="notes-layout">
-        <div class="notes-sidebar">
-          <button class="btn btn-primary mb8" style="width:100%;justify-content:center" onclick="newNote()"><i class="ti ti-plus"></i> New note</button>
-          <div class="search-bar">
-            <i class="ti ti-search"></i>
-            <input id="note-search" placeholder="Search notes…" oninput="renderNotesSidebar()">
-          </div>
-          <div style="margin-bottom:8px">
-            <select id="note-filter-proj" style="font-size:12px;padding:4px 8px" onchange="renderNotesSidebar()">
-              <option value="">All projects</option>
-            </select>
-          </div>
-          <div id="notes-list"></div>
-        </div>
-        <div class="notes-editor" id="notes-editor">
-          <div class="empty-state" id="note-empty">
-            <i class="ti ti-notebook"></i>
-            <p>Select a note or create a new one</p>
-            <div class="sub">Your notes are saved locally on this machine</div>
-          </div>
-          <div id="note-form" style="display:none;flex-direction:column;gap:12px;height:100%">
-            <div class="row">
-              <input type="text" id="note-title" placeholder="Note title…" style="flex:1;font-size:16px;font-weight:600;border:none;padding:4px 0;border-radius:0;border-bottom:1.5px solid var(--border-light)">
-            </div>
-            <div class="row" style="gap:8px;flex-wrap:wrap">
-              <select id="note-proj" style="width:160px;font-size:12px;padding:5px 8px">
-                <option value="">No project</option>
-              </select>
-              <select id="note-tag" style="width:130px;font-size:12px;padding:5px 8px">
-                <option value="">No label</option>
-                <option value="idea">💡 Idea</option>
-                <option value="todo">✅ Todo</option>
-                <option value="bug">🐛 Bug</option>
-                <option value="feature">✨ Feature</option>
-                <option value="research">🔍 Research</option>
-                <option value="meeting">📋 Meeting</option>
-              </select>
-              <span id="note-save-status" style="font-size:11px;color:var(--text-tertiary)">Saved</span>
-              <div class="spacer"></div>
-              <button class="btn btn-sm btn-danger" onclick="deleteNote()"><i class="ti ti-trash"></i> Delete</button>
-              <button class="btn btn-sm btn-primary" onclick="saveNote(true)"><i class="ti ti-device-floppy"></i> Save</button>
-            </div>
-            <textarea id="note-body" placeholder="Write your notes here. Markdown-friendly — use # headings, - lists, `code`, and **bold**." style="flex:1;min-height:300px;font-size:14px" oninput="noteChanged()"></textarea>
-            <div id="note-preview-area" style="display:none"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- COMMITS -->
-    <div class="panel content" id="panel-commits">
-      <div class="row mb12">
-        <div class="search-bar flex1" style="margin-bottom:0">
-          <i class="ti ti-search"></i>
-          <input id="commit-search" placeholder="Search commits…" oninput="renderCommits()">
-        </div>
-        <select id="commit-filter-proj" style="width:160px" onchange="renderCommits()">
-          <option value="">All projects</option>
-        </select>
-        <button class="btn btn-primary" onclick="openModal('modal-commit')"><i class="ti ti-plus"></i> Log commit</button>
-      </div>
-      <div class="row mb16" style="flex-wrap:wrap;gap:6px">
-        <button class="btn btn-sm" id="ctf-all" onclick="setCommitFilter('all')">All</button>
-        <button class="btn btn-sm" id="ctf-feat" onclick="setCommitFilter('feat')">feat</button>
-        <button class="btn btn-sm" id="ctf-fix" onclick="setCommitFilter('fix')">fix</button>
-        <button class="btn btn-sm" id="ctf-refactor" onclick="setCommitFilter('refactor')">refactor</button>
-        <button class="btn btn-sm" id="ctf-style" onclick="setCommitFilter('style')">style</button>
-        <button class="btn btn-sm" id="ctf-docs" onclick="setCommitFilter('docs')">docs</button>
-      </div>
-      <div id="commit-list"></div>
-    </div>
-
-    <!-- FILES -->
-    <div class="panel content" id="panel-files">
-      <div class="grid2 mb16">
-        <div class="card">
-          <div class="card-header">
-            <span class="card-title"><i class="ti ti-folder"></i> File browser</span>
-            <select id="file-proj-sel" style="font-size:12px;padding:4px 8px;width:auto" onchange="renderFileTree()">
-              <option value="">Select project</option>
-            </select>
-          </div>
-          <div id="file-tree" class="file-tree"></div>
-        </div>
-        <div class="card" style="display:flex;flex-direction:column">
-          <div class="card-header">
-            <span class="card-title" id="file-viewer-name"><i class="ti ti-file"></i> File viewer</span>
-            <div class="row" style="gap:6px">
-              <button class="btn btn-sm" onclick="saveFileAsNote()"><i class="ti ti-notebook"></i> Save as note</button>
-              <button class="btn btn-sm" onclick="copyFile()"><i class="ti ti-copy"></i> Copy</button>
-            </div>
-          </div>
-          <div class="file-content-area" id="file-content">Select a file from the tree to view its contents here.</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title"><i class="ti ti-clipboard"></i> Quick paste — drop any code or README here</span>
-          <div class="row" style="gap:6px">
-            <button class="btn btn-sm" onclick="saveFileAsNoteFromPaste()"><i class="ti ti-notebook"></i> Save as note</button>
-            <button class="btn btn-sm" onclick="document.getElementById('paste-area').value=''"><i class="ti ti-x"></i> Clear</button>
-          </div>
-        </div>
-        <textarea id="paste-area" placeholder="Paste a README, code snippet, config file, or anything you want to read and annotate…" style="min-height:140px"></textarea>
-      </div>
-    </div>
-
-    <!-- AI ASSISTANT -->
-    <div class="panel content" id="panel-ai" style="max-width:760px;margin:0 auto;width:100%">
-      <div class="card mb12">
-        <div class="card-header" style="margin-bottom:6px">
-          <span class="card-title"><i class="ti ti-brain"></i> AI dev assistant</span>
-          <button class="btn btn-sm btn-danger" onclick="clearAIChat()"><i class="ti ti-trash"></i> Clear chat</button>
-        </div>
-        <p style="font-size:12px;color:var(--text-secondary)">Powered by Claude. Has full context about your projects, tasks, and notes. Ask anything.</p>
-      </div>
-      <div class="card" style="display:flex;flex-direction:column;gap:12px">
-        <div class="ai-messages" id="ai-messages" style="min-height:240px;max-height:460px"></div>
-        <div class="divider" style="margin:0"></div>
-        <div class="row">
-          <input type="text" id="ai-input" placeholder="Ask about your stack, plan a feature, draft a PR description, debug an idea…" onkeydown="if(event.key==='Enter'&&!event.shiftKey)sendAI()">
-          <button class="btn btn-primary" onclick="sendAI()"><i class="ti ti-send"></i> Send</button>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          <button class="quick-btn" onclick="aiQuick('Summarize my open tasks and suggest what to tackle first')"><i class="ti ti-list-check"></i> Prioritize tasks</button>
-          <button class="quick-btn" onclick="aiQuick('Write a standup update based on my recent commits and open tasks')"><i class="ti ti-message-2"></i> Draft standup</button>
-          <button class="quick-btn" onclick="aiQuick('Review my notes and suggest next steps or follow-ups')"><i class="ti ti-notebook"></i> Review notes</button>
-          <button class="quick-btn" onclick="aiQuick('What should I work on next across all my projects?')"><i class="ti ti-target"></i> What to work on</button>
-          <button class="quick-btn" onclick="aiQuick('Help me write a README for my current project')"><i class="ti ti-file-description"></i> Write README</button>
-          <button class="quick-btn" onclick="aiQuick('Suggest a git branching strategy for my projects')"><i class="ti ti-git-branch"></i> Git strategy</button>
-        </div>
-        <div id="ai-status" style="font-size:11px;color:var(--text-tertiary);text-align:right">Powered by Claude · Messages are not stored between sessions</div>
-      </div>
-    </div>
-
-  </div>
-</div>
-
-<!-- PROJECT MODAL -->
-<div class="modal-bg" id="modal-project" onclick="bgClose(event,'modal-project')">
-  <div class="modal">
-    <div class="modal-title"><i class="ti ti-git-branch"></i> Add project</div>
-    <div class="form-group">
-      <label class="form-label">Project name *</label>
-      <input type="text" id="pf-name" placeholder="my-app">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Type</label>
-      <select id="pf-type">
-        <option value="local">Local repository</option>
-        <option value="github">GitHub</option>
-        <option value="gitlab">GitLab</option>
-        <option value="other">Other / manual</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">URL or local path</label>
-      <input type="text" id="pf-url" placeholder="https://github.com/you/repo  or  ~/projects/app">
-      <button class="btn btn-sm mt8" type="button" onclick="inspectProjectPath()"><i class="ti ti-scan"></i> Inspect local path</button>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Description</label>
-      <input type="text" id="pf-desc" placeholder="What is this project?">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Tech stack (comma separated)</label>
-      <input type="text" id="pf-stack" placeholder="React, Node.js, PostgreSQL">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Color</label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap" id="color-picker"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-project')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveProject()"><i class="ti ti-check"></i> Add project</button>
-    </div>
-  </div>
-</div>
-
-<!-- COMMIT MODAL -->
-<div class="modal-bg" id="modal-commit" onclick="bgClose(event,'modal-commit')">
-  <div class="modal">
-    <div class="modal-title"><i class="ti ti-git-commit"></i> Log a commit</div>
-    <div class="form-group">
-      <label class="form-label">Project *</label>
-      <select id="cf-proj"></select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Commit message *</label>
-      <input type="text" id="cf-msg" placeholder="feat: add user authentication">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Commit hash</label>
-      <input type="text" id="cf-hash" placeholder="a3f2c91 (leave blank to auto-generate)">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Branch</label>
-      <input type="text" id="cf-branch" placeholder="main">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Author</label>
-      <input type="text" id="cf-author" placeholder="your name or email">
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-commit')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveCommit()"><i class="ti ti-check"></i> Save</button>
-    </div>
-  </div>
-</div>
-
-<script>
 const STORE = 'devflow_v3';
 const COLORS = ['#185FA5','#639922','#D85A30','#854F0B','#534AB7','#993556','#0F6E56','#5F5E5A'];
 const API_BASE = location.protocol.startsWith('http') ? '' : null;
 
 function tauriInvoke() {
-  return window.__TAURI__?.core?.invoke || null;
+  return window.__TAURI_INTERNALS__ ? tauriInvokeCore : null;
 }
 
 function load() {
@@ -649,6 +79,7 @@ let commitFilter = 'all';
 let selectedColor = COLORS[0];
 let noteAutoSave = null;
 let serverBacked = false;
+let fileContentCache = {};
 
 async function api(path, options = {}) {
   const invoke = tauriInvoke();
@@ -683,6 +114,7 @@ async function tauriApi(invoke, path, options = {}) {
   if (path === '/api/state' && method === 'PUT') return invoke('save_state', { state: body });
   if (path === '/api/projects/inspect' && method === 'POST') return invoke('inspect_project', { repoPath: body.repoPath || '' });
   if (path === '/api/sync' && method === 'POST') return invoke('sync_workspace');
+  if (path === '/api/ai/chat' && method === 'POST') return invoke('ollama_chat', body);
   const treeMatch = path.match(/^\/api\/projects\/([^/]+)\/tree$/);
   if (treeMatch && method === 'GET') return invoke('project_tree', { projectId: decodeURIComponent(treeMatch[1]) });
   const fileMatch = path.match(/^\/api\/projects\/([^/]+)\/file\?path=(.*)$/);
@@ -798,7 +230,7 @@ function updateBadges() {
   document.getElementById('badge-notes').textContent = db.notes.length;
   document.getElementById('badge-commits').textContent = db.commits.length;
   document.getElementById('badge-files').textContent = db.projects.length;
-  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: serverBacked ? 'local context' : 'Claude' }[currentPanel] || '';
+  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: 'Ollama' }[currentPanel] || '';
 }
 
 async function refreshWorkspace() {
@@ -821,7 +253,7 @@ async function refreshWorkspace() {
 function renderSidebar() {
   const el = document.getElementById('proj-list');
   el.innerHTML = db.projects.map(p => `
-    <div class="proj-sidebar-item" onclick="showPanel('overview')">
+    <div class="proj-sidebar-item" data-action="show-panel" data-panel="overview">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(p.name)}</span>
       <span class="tag tag-${p.type==='github'?'blue':p.type==='local'?'green':'gray'}" style="font-size:9px;padding:1px 5px">${esc(p.type)}</span>
@@ -832,7 +264,7 @@ function renderSidebar() {
   const cp = document.getElementById('color-picker');
   if (cp) {
     cp.innerHTML = COLORS.map(c => `
-      <div class="color-swatch ${c===selectedColor?'active':''}" style="background:${c}" data-color="${c}" onclick="pickColor(this,'${c}')"></div>
+      <div class="color-swatch ${c===selectedColor?'active':''}" style="background:${c}" data-action="pick-color" data-color="${c}"></div>
     `).join('');
   }
 
@@ -961,7 +393,7 @@ function renderOverview() {
   document.getElementById('ov-tasks').innerHTML = openTasks.length ? openTasks.slice(0,5).map(t => {
     const p = proj(t.projId);
     return `<div class="agenda-item" style="margin-bottom:6px">
-      <div class="agenda-check" onclick="toggleTask('${t.id}')"></div>
+      <div class="agenda-check" data-action="toggle-task" data-id="${esc(t.id)}"></div>
       <div style="flex:1">
         <div class="agenda-text">${esc(t.text)}</div>
         <div class="agenda-meta">${p ? `<span style="color:${safeColor(p.color)}">${esc(p.name)}</span>` : ''}${t.priority==='high' ? '<span class="tag tag-red">High</span>' : ''}</div>
@@ -994,7 +426,7 @@ function renderOverview() {
         <span class="tag tag-${typeMap[p.type]||'gray'}">${esc(p.type)}</span>
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${last ? timeAgo(last.date) : 'No commits'}</div>
       </div>
-      <button class="btn btn-sm btn-danger" onclick="deleteProject('${p.id}')" title="Delete project"><i class="ti ti-trash"></i></button>
+      <button class="btn btn-sm btn-danger" data-action="delete-project" data-id="${esc(p.id)}" title="Delete project"><i class="ti ti-trash"></i></button>
     </div>`;
   }).join('') : `<div class="empty-state"><i class="ti ti-folder-plus"></i><p>No projects yet</p><div class="sub">Add your first project to get started</div></div>`;
 }
@@ -1023,7 +455,7 @@ function renderAgenda() {
     const pColors = {high:'red',low:'gray',normal:''};
     const pc = pColors[t.priority];
     return `<div class="agenda-item">
-      <div class="agenda-check ${t.done?'done':''}" onclick="toggleTask('${t.id}')">${t.done?'<i class="ti ti-check"></i>':''}</div>
+      <div class="agenda-check ${t.done?'done':''}" data-action="toggle-task" data-id="${esc(t.id)}">${t.done?'<i class="ti ti-check"></i>':''}</div>
       <div style="flex:1">
         <div class="agenda-text ${t.done?'done-text':''}">${esc(t.text)}</div>
         <div class="agenda-meta">
@@ -1033,7 +465,7 @@ function renderAgenda() {
           ${t.priority==='low' ? '<span class="tag tag-gray" style="font-size:10px">Low</span>' : ''}
         </div>
       </div>
-      <button onclick="deleteTask('${t.id}')" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>
+      <button data-action="delete-task" data-id="${esc(t.id)}" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>
     </div>`;
   }).join('');
   updateBadges();
@@ -1088,7 +520,7 @@ function renderNotesSidebar() {
   const el = document.getElementById('notes-list');
   el.innerHTML = notes.length ? notes.map(n => {
     const p = proj(n.projId);
-    return `<div class="note-card ${n.id===selectedNoteId?'selected':''}" onclick="openNote('${n.id}')">
+    return `<div class="note-card ${n.id===selectedNoteId?'selected':''}" data-action="open-note" data-id="${esc(n.id)}">
       <div class="note-title">${esc(n.title || 'Untitled')}</div>
       <div class="note-preview">${esc(n.body.replace(/[#*`\[\]]/g,'').replace(/\n/g,' '))}</div>
       <div class="note-foot">
@@ -1198,7 +630,7 @@ function renderCommits() {
               </div>
               <div class="commit-meta">${c.author ? esc(c.author)+' · ' : ''}${c.branch ? esc(c.branch)+' · ' : ''}${timeAgo(c.date)}</div>
             </div>
-            <button onclick="deleteCommit('${c.id}')" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>
+            <button data-action="delete-commit" data-id="${esc(c.id)}" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>
           </div>`;
         }).join('')}
       </div>
@@ -1280,7 +712,7 @@ function buildServerTree(pid, nodes, depth) {
     const pad = depth * 16 + 6;
     if (node.type === 'dir') {
       const id = 'dir-' + Math.random().toString(36).slice(2);
-      return `<div class="file-item dir-item" style="padding-left:${pad}px" onclick="document.getElementById('${id}').style.display=document.getElementById('${id}').style.display==='none'?'block':'none'">
+      return `<div class="file-item dir-item" style="padding-left:${pad}px" data-action="toggle-dir" data-target="${id}">
         <i class="ti ti-folder" style="color:#854F0B"></i>${esc(node.name)}/
       </div>
       <div id="${id}">${buildServerTree(pid, node.children || [], depth+1)}</div>`;
@@ -1289,7 +721,7 @@ function buildServerTree(pid, nodes, depth) {
     const icons = {tsx:'ti-brand-typescript',ts:'ti-brand-typescript',js:'ti-brand-javascript',jsx:'ti-brand-react',md:'ti-markdown',json:'ti-braces',css:'ti-palette',html:'ti-brand-html5',env:'ti-lock',sh:'ti-terminal'};
     const icon = icons[ext] || 'ti-file';
     const ec = {tsx:'#185FA5',ts:'#185FA5',js:'#854F0B',jsx:'#0F6E56',md:'#5f5e5a',json:'#639922',css:'#993556'}[ext] || 'var(--text-tertiary)';
-    return `<div class="file-item" style="padding-left:${pad}px" onclick="viewRealFile('${pid}','${encodeURIComponent(node.path)}')">
+    return `<div class="file-item" style="padding-left:${pad}px" data-action="view-real-file" data-project="${esc(pid)}" data-path="${encodeURIComponent(node.path)}">
       <i class="ti ${icon}" style="color:${ec}"></i>${esc(node.name)}
     </div>`;
   }).join('');
@@ -1314,7 +746,7 @@ function buildTree(dir, depth) {
       const id = 'dir-' + Math.random().toString(36).slice(2);
       const extIcons = { src:'ti-folder-code', components:'ti-components', routes:'ti-route', middleware:'ti-shield', pages:'ti-layout' };
       const icon = extIcons[name] || 'ti-folder';
-      return `<div class="file-item dir-item" style="padding-left:${pad}px" onclick="document.getElementById('${id}').style.display=document.getElementById('${id}').style.display==='none'?'block':'none'">
+      return `<div class="file-item dir-item" style="padding-left:${pad}px" data-action="toggle-dir" data-target="${id}">
         <i class="ti ${icon}" style="color:#854F0B"></i>${esc(name)}/
       </div>
       <div id="${id}">${buildTree(node.children, depth+1)}</div>`;
@@ -1323,7 +755,9 @@ function buildTree(dir, depth) {
       const icons = {tsx:'ti-brand-typescript',ts:'ti-brand-typescript',js:'ti-brand-javascript',jsx:'ti-brand-react',md:'ti-markdown',json:'ti-braces',css:'ti-palette',html:'ti-brand-html5',env:'ti-lock',sh:'ti-terminal'};
       const icon = icons[ext] || 'ti-file';
       const ec = {tsx:'#185FA5',ts:'#185FA5',js:'#854F0B',jsx:'#0F6E56',md:'#5f5e5a',json:'#639922',css:'#993556'}[ext] || 'var(--text-tertiary)';
-      return `<div class="file-item" style="padding-left:${pad}px" onclick="viewFile('${name}',${JSON.stringify(node.content)})">
+      const key = 'file-' + Math.random().toString(36).slice(2);
+      fileContentCache[key] = { name, content: node.content };
+      return `<div class="file-item" style="padding-left:${pad}px" data-action="view-cached-file" data-key="${key}">
         <i class="ti ${icon}" style="color:${ec}"></i>${esc(name)}
       </div>`;
     }
@@ -1335,10 +769,9 @@ function viewFile(name, content) {
   document.getElementById('file-content').textContent = content;
 }
 
-function copyFile() {
+function copyFile(btn) {
   const c = document.getElementById('file-content').textContent;
   navigator.clipboard.writeText(c).catch(() => {});
-  const btn = event.currentTarget;
   btn.innerHTML = '<i class="ti ti-check"></i> Copied!';
   setTimeout(() => btn.innerHTML = '<i class="ti ti-copy"></i> Copy', 1500);
 }
@@ -1421,24 +854,21 @@ ${db.notes.slice(0,4).map(n => { const p=proj(n.projId); return `- "${n.title}"$
 Be concise, practical, and specific. Use the context above to give personalized answers. Format code in backticks.`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const data = await api('/api/ai/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
+        model: db.settings?.ollamaModel || 'llama3.2:3b',
         system: ctx,
         messages: aiHistory().slice(0,-1)
       })
     });
-    const data = await res.json();
     thinking.remove();
-    const reply = data.content?.map(b => b.text||'').join('') || 'Could not get a response. Try again.';
+    const reply = data.reply || 'Could not get a response. Try again.';
     appendMsg(reply, 'assistant');
-    document.getElementById('ai-status').textContent = 'Powered by Claude · ' + new Date().toLocaleTimeString();
+    document.getElementById('ai-status').textContent = 'Powered by Ollama · ' + (db.settings?.ollamaModel || 'llama3.2:3b') + ' · ' + new Date().toLocaleTimeString();
   } catch(e) {
     thinking.remove();
-    appendMsg('Connection error. Check your network and try again.', 'assistant');
+    appendMsg('Ollama connection error. Make sure Ollama is running and llama3.2:3b is installed.', 'assistant');
     document.getElementById('ai-status').textContent = 'Error';
   }
 }
@@ -1448,8 +878,75 @@ function aiQuick(msg) {
   sendAI();
 }
 
+function bindEvents() {
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    const action = target.dataset.action;
+    if (action === 'show-panel') showPanel(target.dataset.panel);
+    else if (action === 'open-modal') openModal(target.dataset.modal);
+    else if (action === 'close-modal') closeModal(target.dataset.modal);
+    else if (action === 'modal-bg-close') bgClose(event, target.dataset.modal);
+    else if (action === 'topbar-action') topbarAction();
+    else if (action === 'add-task') addTask();
+    else if (action === 'set-filter') setFilter(target.dataset.filter);
+    else if (action === 'clear-done') clearDone();
+    else if (action === 'new-note') newNote();
+    else if (action === 'delete-note') deleteNote();
+    else if (action === 'save-note') saveNote(true);
+    else if (action === 'set-commit-filter') setCommitFilter(target.dataset.filter);
+    else if (action === 'save-file-note') saveFileAsNote();
+    else if (action === 'copy-file') copyFile(target);
+    else if (action === 'save-paste-note') saveFileAsNoteFromPaste();
+    else if (action === 'clear-paste') document.getElementById('paste-area').value = '';
+    else if (action === 'clear-ai') clearAIChat();
+    else if (action === 'send-ai') sendAI();
+    else if (action === 'ai-quick') aiQuick(target.dataset.message);
+    else if (action === 'inspect-project') inspectProjectPath();
+    else if (action === 'save-project') saveProject();
+    else if (action === 'save-commit') saveCommit();
+    else if (action === 'pick-color') pickColor(target, target.dataset.color);
+    else if (action === 'toggle-task') toggleTask(target.dataset.id);
+    else if (action === 'delete-project') deleteProject(target.dataset.id);
+    else if (action === 'delete-task') deleteTask(target.dataset.id);
+    else if (action === 'open-note') openNote(target.dataset.id);
+    else if (action === 'delete-commit') deleteCommit(target.dataset.id);
+    else if (action === 'toggle-dir') {
+      const el = document.getElementById(target.dataset.target);
+      if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    } else if (action === 'view-real-file') {
+      viewRealFile(target.dataset.project, target.dataset.path);
+    } else if (action === 'view-cached-file') {
+      const item = fileContentCache[target.dataset.key];
+      if (item) viewFile(item.name, item.content);
+    }
+  });
+
+  document.addEventListener('input', (event) => {
+    const action = event.target.dataset?.inputAction;
+    if (action === 'render-notes') renderNotesSidebar();
+    else if (action === 'render-commits') renderCommits();
+    else if (action === 'note-changed') noteChanged();
+  });
+
+  document.addEventListener('change', (event) => {
+    const action = event.target.dataset?.changeAction;
+    if (action === 'render-notes') renderNotesSidebar();
+    else if (action === 'render-commits') renderCommits();
+    else if (action === 'render-agenda') renderAgenda();
+    else if (action === 'render-file-tree') renderFileTree();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    const action = event.target.dataset?.keyAction;
+    if (action === 'add-task-enter' && event.key === 'Enter') addTask();
+    if (action === 'send-ai-enter' && event.key === 'Enter' && !event.shiftKey) sendAI();
+  });
+}
+
 // INIT
 async function init() {
+  bindEvents();
   await hydrateFromServer();
   renderSidebar();
   renderOverview();
@@ -1458,6 +955,3 @@ async function init() {
   initAI();
 }
 init();
-</script>
-</body>
-</html>

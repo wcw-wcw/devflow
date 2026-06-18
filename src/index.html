@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevFlow — Dev Dashboard</title>
+<link rel="stylesheet" href="/icons.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><i class="ti ti-terminal-2"></i></div>
+      <div>
+        <div><span>DevFlow</span></div>
+        <div class="version">dev dashboard</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Workspace</div>
+      <div class="sidebar-item active" data-action="show-panel" data-panel="overview" id="nav-overview">
+        <i class="ti ti-layout-dashboard"></i> Overview
+        <span class="sidebar-badge" id="badge-overview"></span>
+      </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="agenda" id="nav-agenda">
+        <i class="ti ti-checklist"></i> Agenda
+        <span class="sidebar-badge" id="badge-agenda"></span>
+      </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="notes" id="nav-notes">
+        <i class="ti ti-notebook"></i> Notes
+        <span class="sidebar-badge" id="badge-notes"></span>
+      </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="commits" id="nav-commits">
+        <i class="ti ti-git-commit"></i> Commits
+        <span class="sidebar-badge" id="badge-commits"></span>
+      </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="files" id="nav-files">
+        <i class="ti ti-folder-code"></i> Files
+        <span class="sidebar-badge" id="badge-files"></span>
+      </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="ai" id="nav-ai">
+        <i class="ti ti-brain"></i> AI Assistant
+      </div>
+    </div>
+
+    <div class="sidebar-projects">
+      <div class="sidebar-label">Projects</div>
+      <div id="proj-list"></div>
+      <button class="add-proj-btn" data-action="open-modal" data-modal="modal-project">
+        <i class="ti ti-plus"></i> Add project
+      </button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <span class="topbar-title" id="topbar-title">Overview</span>
+      <span class="topbar-badge" id="topbar-badge"></span>
+      <span class="runtime-badge" id="runtime-badge"><span class="runtime-dot"></span><span>browser only</span></span>
+      <div class="spacer"></div>
+      <button class="btn btn-sm" data-action="open-modal" data-modal="modal-project"><i class="ti ti-plus"></i> Add project</button>
+      <button class="btn btn-sm btn-primary" id="topbar-action-btn" data-action="topbar-action">
+        <i class="ti ti-refresh"></i> <span id="topbar-action-label">Refresh</span>
+      </button>
+    </div>
+
+    <!-- OVERVIEW -->
+    <div class="panel active content" id="panel-overview">
+      <div class="grid4 mb16">
+        <div class="stat-card"><div class="stat-label">Projects</div><div class="stat-val" id="stat-projects">0</div></div>
+        <div class="stat-card"><div class="stat-label">Open tasks</div><div class="stat-val" id="stat-tasks">0</div></div>
+        <div class="stat-card"><div class="stat-label">Notes</div><div class="stat-val" id="stat-notes">0</div></div>
+        <div class="stat-card"><div class="stat-label">Commits logged</div><div class="stat-val" id="stat-commits">0</div></div>
+      </div>
+      <div class="grid2 mb16">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-git-commit"></i> Recent commits</span>
+            <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+          </div>
+          <div id="ov-commits" class="commit-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-checklist"></i> Open tasks</span>
+            <button class="btn btn-sm" data-action="show-panel" data-panel="agenda">View all <i class="ti ti-arrow-right"></i></button>
+          </div>
+          <div id="ov-tasks"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-stack"></i> All projects</span>
+        </div>
+        <div id="ov-projects"></div>
+      </div>
+    </div>
+
+    <!-- AGENDA -->
+    <div class="panel content" id="panel-agenda">
+      <div class="row mb16">
+        <input type="text" id="task-input" placeholder="Add a task… (Enter to save)" style="flex:1" data-key-action="add-task-enter">
+        <select id="task-proj" style="width:160px">
+          <option value="">No project</option>
+        </select>
+        <select id="task-priority" style="width:115px">
+          <option value="normal">Normal</option>
+          <option value="high">High priority</option>
+          <option value="low">Low priority</option>
+        </select>
+        <button class="btn btn-primary" data-action="add-task"><i class="ti ti-plus"></i> Add</button>
+      </div>
+      <div class="row mb12" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-sm" id="tf-all" data-action="set-filter" data-filter="all">All</button>
+        <button class="btn btn-sm" id="tf-open" data-action="set-filter" data-filter="open">Open</button>
+        <button class="btn btn-sm" id="tf-done" data-action="set-filter" data-filter="done">Done</button>
+        <button class="btn btn-sm" id="tf-high" data-action="set-filter" data-filter="high">High priority</button>
+        <select id="tf-proj" style="width:150px;font-size:12px;padding:4px 8px" data-change-action="render-agenda">
+          <option value="">All projects</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn btn-sm btn-danger" data-action="clear-done"><i class="ti ti-trash"></i> Clear done</button>
+      </div>
+      <div id="agenda-list"></div>
+    </div>
+
+    <!-- NOTES -->
+    <div class="panel-fill" id="panel-notes">
+      <div class="notes-layout">
+        <div class="notes-sidebar">
+          <button class="btn btn-primary mb8" style="width:100%;justify-content:center" data-action="new-note"><i class="ti ti-plus"></i> New note</button>
+          <div class="search-bar">
+            <i class="ti ti-search"></i>
+            <input id="note-search" placeholder="Search notes…" data-input-action="render-notes">
+          </div>
+          <div style="margin-bottom:8px">
+            <select id="note-filter-proj" style="font-size:12px;padding:4px 8px" data-change-action="render-notes">
+              <option value="">All projects</option>
+            </select>
+          </div>
+          <div id="notes-list"></div>
+        </div>
+        <div class="notes-editor" id="notes-editor">
+          <div class="empty-state" id="note-empty">
+            <i class="ti ti-notebook"></i>
+            <p>Select a note or create a new one</p>
+            <div class="sub">Your notes are saved locally on this machine</div>
+          </div>
+          <div id="note-form" style="display:none;flex-direction:column;gap:12px;height:100%">
+            <div class="row">
+              <input type="text" id="note-title" placeholder="Note title…" style="flex:1;font-size:16px;font-weight:600;border:none;padding:4px 0;border-radius:0;border-bottom:1.5px solid var(--border-light)">
+            </div>
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <select id="note-proj" style="width:160px;font-size:12px;padding:5px 8px">
+                <option value="">No project</option>
+              </select>
+              <select id="note-tag" style="width:130px;font-size:12px;padding:5px 8px">
+                <option value="">No label</option>
+                <option value="idea">💡 Idea</option>
+                <option value="todo">✅ Todo</option>
+                <option value="bug">🐛 Bug</option>
+                <option value="feature">✨ Feature</option>
+                <option value="research">🔍 Research</option>
+                <option value="meeting">📋 Meeting</option>
+              </select>
+              <span id="note-save-status" style="font-size:11px;color:var(--text-tertiary)">Saved</span>
+              <div class="spacer"></div>
+              <button class="btn btn-sm btn-danger" data-action="delete-note"><i class="ti ti-trash"></i> Delete</button>
+              <button class="btn btn-sm btn-primary" data-action="save-note"><i class="ti ti-device-floppy"></i> Save</button>
+            </div>
+            <textarea id="note-body" placeholder="Write your notes here. Markdown-friendly — use # headings, - lists, `code`, and **bold**." style="flex:1;min-height:300px;font-size:14px" data-input-action="note-changed"></textarea>
+            <div id="note-preview-area" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMMITS -->
+    <div class="panel content" id="panel-commits">
+      <div class="row mb12">
+        <div class="search-bar flex1" style="margin-bottom:0">
+          <i class="ti ti-search"></i>
+          <input id="commit-search" placeholder="Search commits…" data-input-action="render-commits">
+        </div>
+        <select id="commit-filter-proj" style="width:160px" data-change-action="render-commits">
+          <option value="">All projects</option>
+        </select>
+        <button class="btn btn-primary" data-action="open-modal" data-modal="modal-commit"><i class="ti ti-plus"></i> Log commit</button>
+      </div>
+      <div class="row mb16" style="flex-wrap:wrap;gap:6px">
+        <button class="btn btn-sm" id="ctf-all" data-action="set-commit-filter" data-filter="all">All</button>
+        <button class="btn btn-sm" id="ctf-feat" data-action="set-commit-filter" data-filter="feat">feat</button>
+        <button class="btn btn-sm" id="ctf-fix" data-action="set-commit-filter" data-filter="fix">fix</button>
+        <button class="btn btn-sm" id="ctf-refactor" data-action="set-commit-filter" data-filter="refactor">refactor</button>
+        <button class="btn btn-sm" id="ctf-style" data-action="set-commit-filter" data-filter="style">style</button>
+        <button class="btn btn-sm" id="ctf-docs" data-action="set-commit-filter" data-filter="docs">docs</button>
+      </div>
+      <div id="commit-list"></div>
+    </div>
+
+    <!-- FILES -->
+    <div class="panel content" id="panel-files">
+      <div class="grid2 mb16">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title"><i class="ti ti-folder"></i> File browser</span>
+            <select id="file-proj-sel" style="font-size:12px;padding:4px 8px;width:auto" data-change-action="render-file-tree">
+              <option value="">Select project</option>
+            </select>
+          </div>
+          <div id="file-tree" class="file-tree"></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column">
+          <div class="card-header">
+            <span class="card-title" id="file-viewer-name"><i class="ti ti-file"></i> File viewer</span>
+            <div class="row" style="gap:6px">
+              <button class="btn btn-sm" data-action="save-file-note"><i class="ti ti-notebook"></i> Save as note</button>
+              <button class="btn btn-sm" data-action="copy-file"><i class="ti ti-copy"></i> Copy</button>
+            </div>
+          </div>
+          <div class="file-content-area" id="file-content">Select a file from the tree to view its contents here.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-clipboard"></i> Quick paste — drop any code or README here</span>
+          <div class="row" style="gap:6px">
+            <button class="btn btn-sm" data-action="save-paste-note"><i class="ti ti-notebook"></i> Save as note</button>
+            <button class="btn btn-sm" data-action="clear-paste"><i class="ti ti-x"></i> Clear</button>
+          </div>
+        </div>
+        <textarea id="paste-area" placeholder="Paste a README, code snippet, config file, or anything you want to read and annotate…" style="min-height:140px"></textarea>
+      </div>
+    </div>
+
+    <!-- AI ASSISTANT -->
+    <div class="panel content" id="panel-ai" style="max-width:760px;margin:0 auto;width:100%">
+      <div class="card mb12">
+        <div class="card-header" style="margin-bottom:6px">
+          <span class="card-title"><i class="ti ti-brain"></i> AI dev assistant</span>
+          <button class="btn btn-sm btn-danger" data-action="clear-ai"><i class="ti ti-trash"></i> Clear chat</button>
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary)">Powered by local Ollama. Has context about your projects, tasks, and notes. Ask anything.</p>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;gap:12px">
+        <div class="ai-messages" id="ai-messages" style="min-height:240px;max-height:460px"></div>
+        <div class="divider" style="margin:0"></div>
+        <div class="row">
+          <input type="text" id="ai-input" placeholder="Ask about your stack, plan a feature, draft a PR description, debug an idea…" data-key-action="send-ai-enter">
+          <button class="btn btn-primary" data-action="send-ai"><i class="ti ti-send"></i> Send</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <button class="quick-btn" data-action="ai-quick" data-message="Summarize my open tasks and suggest what to tackle first"><i class="ti ti-list-check"></i> Prioritize tasks</button>
+          <button class="quick-btn" data-action="ai-quick" data-message="Write a standup update based on my recent commits and open tasks"><i class="ti ti-message-2"></i> Draft standup</button>
+          <button class="quick-btn" data-action="ai-quick" data-message="Review my notes and suggest next steps or follow-ups"><i class="ti ti-notebook"></i> Review notes</button>
+          <button class="quick-btn" data-action="ai-quick" data-message="What should I work on next across all my projects?"><i class="ti ti-target"></i> What to work on</button>
+          <button class="quick-btn" data-action="ai-quick" data-message="Help me write a README for my current project"><i class="ti ti-file-description"></i> Write README</button>
+          <button class="quick-btn" data-action="ai-quick" data-message="Suggest a git branching strategy for my projects"><i class="ti ti-git-branch"></i> Git strategy</button>
+        </div>
+        <div id="ai-status" style="font-size:11px;color:var(--text-tertiary);text-align:right">Powered by Ollama · llama3.2:3b</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PROJECT MODAL -->
+<div class="modal-bg" id="modal-project" data-action="modal-bg-close" data-modal="modal-project">
+  <div class="modal">
+    <div class="modal-title"><i class="ti ti-git-branch"></i> Add project</div>
+    <div class="form-group">
+      <label class="form-label">Project name *</label>
+      <input type="text" id="pf-name" placeholder="my-app">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select id="pf-type">
+        <option value="local">Local repository</option>
+        <option value="github">GitHub</option>
+        <option value="gitlab">GitLab</option>
+        <option value="other">Other / manual</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">URL or local path</label>
+      <input type="text" id="pf-url" placeholder="https://github.com/you/repo  or  ~/projects/app">
+      <button class="btn btn-sm mt8" type="button" data-action="inspect-project"><i class="ti ti-scan"></i> Inspect local path</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <input type="text" id="pf-desc" placeholder="What is this project?">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tech stack (comma separated)</label>
+      <input type="text" id="pf-stack" placeholder="React, Node.js, PostgreSQL">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Color</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="color-picker"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-action="close-modal" data-modal="modal-project">Cancel</button>
+      <button class="btn btn-primary" data-action="save-project"><i class="ti ti-check"></i> Add project</button>
+    </div>
+  </div>
+</div>
+
+<!-- COMMIT MODAL -->
+<div class="modal-bg" id="modal-commit" data-action="modal-bg-close" data-modal="modal-commit">
+  <div class="modal">
+    <div class="modal-title"><i class="ti ti-git-commit"></i> Log a commit</div>
+    <div class="form-group">
+      <label class="form-label">Project *</label>
+      <select id="cf-proj"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Commit message *</label>
+      <input type="text" id="cf-msg" placeholder="feat: add user authentication">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Commit hash</label>
+      <input type="text" id="cf-hash" placeholder="a3f2c91 (leave blank to auto-generate)">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Branch</label>
+      <input type="text" id="cf-branch" placeholder="main">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Author</label>
+      <input type="text" id="cf-author" placeholder="your name or email">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" data-action="close-modal" data-modal="modal-commit">Cancel</button>
+      <button class="btn btn-primary" data-action="save-commit"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

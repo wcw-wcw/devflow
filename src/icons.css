@@ -1,0 +1,48 @@
+.ti {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ti::before { content: "•"; }
+.ti-terminal-2::before { content: ">"; }
+.ti-layout-dashboard::before { content: "□"; }
+.ti-checklist::before { content: "✓"; }
+.ti-notebook::before { content: "N"; }
+.ti-git-commit::before { content: "●"; }
+.ti-folder-code::before,
+.ti-folder::before { content: "▣"; }
+.ti-brain::before { content: "*"; }
+.ti-plus::before { content: "+"; }
+.ti-arrow-right::before { content: "→"; }
+.ti-search::before { content: "⌕"; }
+.ti-trash::before,
+.ti-x::before { content: "×"; }
+.ti-device-floppy::before { content: "S"; }
+.ti-copy::before { content: "C"; }
+.ti-check::before { content: "✓"; }
+.ti-send::before { content: "↗"; }
+.ti-message-2::before { content: "M"; }
+.ti-list-check::before { content: "L"; }
+.ti-target::before { content: "◎"; }
+.ti-file-description::before,
+.ti-file::before { content: "F"; }
+.ti-git-branch::before { content: "⑂"; }
+.ti-scan::before { content: "⌗"; }
+.ti-components::before { content: "C"; }
+.ti-route::before { content: "R"; }
+.ti-shield::before { content: "□"; }
+.ti-layout::before { content: "L"; }
+.ti-brand-typescript::before { content: "T"; }
+.ti-brand-javascript::before { content: "J"; }
+.ti-brand-react::before { content: "R"; }
+.ti-markdown::before { content: "M"; }
+.ti-braces::before { content: "{}"; font-size: .72em; }
+.ti-palette::before { content: "P"; }
+.ti-brand-html5::before { content: "H"; }
+.ti-lock::before { content: "#"; }

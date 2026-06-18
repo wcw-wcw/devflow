@@ -1,6 +1,15 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::HashSet, env, fs, path::{Path, PathBuf}, process::Command};
+use std::{
+    collections::HashSet,
+    env,
+    fs,
+    io::{Read, Write},
+    net::TcpStream,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
 use tauri::{AppHandle, Manager};
 
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
@@ -64,6 +73,12 @@ struct TreeNode {
     path: String,
     size: Option<u64>,
     children: Option<Vec<TreeNode>>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ChatMessage {
+    role: String,
+    content: String,
 }
 
 fn default_state() -> Value {
@@ -409,6 +424,55 @@ fn read_project_file(app: AppHandle, project_id: String, path: String) -> Result
     Ok(json!({ "path": path, "content": content }))
 }
 
+#[tauri::command]
+fn ollama_chat(model: Option<String>, system: Option<String>, messages: Option<Vec<ChatMessage>>) -> Result<Value, String> {
+    let mut chat_messages = Vec::new();
+    chat_messages.push(json!({
+        "role": "system",
+        "content": system.unwrap_or_else(|| "You are DevFlow, a local development assistant.".to_string())
+    }));
+    for message in messages.unwrap_or_default() {
+        chat_messages.push(json!({
+            "role": if message.role == "assistant" { "assistant" } else { "user" },
+            "content": message.content
+        }));
+    }
+
+    let body = serde_json::to_string(&json!({
+        "model": model.unwrap_or_else(|| "llama3.2:3b".to_string()),
+        "stream": false,
+        "messages": chat_messages
+    }))
+    .map_err(|error| format!("Could not serialize Ollama request: {error}"))?;
+
+    let mut stream = TcpStream::connect("127.0.0.1:11434")
+        .map_err(|error| format!("Could not connect to Ollama at 127.0.0.1:11434: {error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(60)))
+        .map_err(|error| format!("Could not set Ollama read timeout: {error}"))?;
+    let request = format!(
+        "POST /api/chat HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.as_bytes().len(),
+        body
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| format!("Could not send Ollama request: {error}"))?;
+
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|error| format!("Could not read Ollama response: {error}"))?;
+    let (_, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "Ollama returned an invalid HTTP response".to_string())?;
+    let data: Value = serde_json::from_str(body).map_err(|error| format!("Ollama returned invalid JSON: {error}"))?;
+    if let Some(error) = data.get("error").and_then(Value::as_str) {
+        return Err(error.to_string());
+    }
+    Ok(json!({ "reply": data.pointer("/message/content").and_then(Value::as_str).unwrap_or("") }))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -417,7 +481,8 @@ pub fn run() {
             inspect_project,
             sync_workspace,
             project_tree,
-            read_project_file
+            read_project_file,
+            ollama_chat
         ])
         .run(tauri::generate_context!())
         .expect("error while running DevFlow");

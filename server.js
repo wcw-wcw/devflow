@@ -49,6 +49,15 @@ function sendFile(res, filePath, contentType) {
     .catch(() => send(res, 404, { error: 'Not found' }));
 }
 
+function contentType(filePath) {
+  if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (filePath.endsWith('.js')) return 'text/javascript; charset=utf-8';
+  if (filePath.endsWith('.css')) return 'text/css; charset=utf-8';
+  if (filePath.endsWith('.png')) return 'image/png';
+  if (filePath.endsWith('.svg')) return 'image/svg+xml';
+  return 'application/octet-stream';
+}
+
 async function readJson(req) {
   let body = '';
   for await (const chunk of req) {
@@ -212,6 +221,35 @@ async function handleApi(req, res, url) {
     return send(res, 200, state);
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/ai/chat') {
+    const payload = await readJson(req);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const ollama = await fetch('http://127.0.0.1:11434/api/chat', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: payload.model || 'llama3.2:3b',
+          stream: false,
+          messages: [
+            { role: 'system', content: payload.system || 'You are DevFlow, a local development assistant.' },
+            ...(payload.messages || []).map((message) => ({
+              role: message.role === 'assistant' ? 'assistant' : 'user',
+              content: String(message.content || '')
+            }))
+          ]
+        })
+      });
+      const data = await ollama.json();
+      if (!ollama.ok) return send(res, ollama.status, { error: data.error || 'Ollama request failed' });
+      return send(res, 200, { reply: data.message?.content || '' });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   const treeMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/tree$/);
   if (req.method === 'GET' && treeMatch) {
     const state = await loadState();
@@ -242,8 +280,10 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-    if (url.pathname === '/' || url.pathname === '/devflow.html') {
-      return sendFile(res, path.join(__dirname, 'devflow.html'), 'text/html; charset=utf-8');
+    const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname.slice(1));
+    const filePath = resolveInside(path.join(__dirname, 'dist'), rel);
+    if (existsSync(filePath)) {
+      return sendFile(res, filePath, contentType(filePath));
     }
     return send(res, 404, { error: 'Not found' });
   } catch (error) {
