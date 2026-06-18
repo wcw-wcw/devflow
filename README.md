@@ -68,6 +68,12 @@ npm run tauri:build
 
 The Tauri build uses the Vite frontend and calls native Rust commands for state, git, file access, and local AI.
 
+Open the packaged macOS app:
+
+```bash
+npm run app:open
+```
+
 ## Local AI
 
 DevFlow uses Ollama for the AI assistant. The default model is:

@@ -250,6 +250,32 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/ollama/status') {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const ollama = await fetch('http://127.0.0.1:11434/api/tags', { signal: controller.signal });
+      const data = await ollama.json();
+      if (!ollama.ok) return send(res, ollama.status, { error: data.error || 'Ollama request failed' });
+      return send(res, 200, { ok: true, models: (data.models || []).map((model) => model.name).filter(Boolean) });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/projects/open') {
+    const { path: repoPath, target } = await readJson(req);
+    const root = path.resolve(expandHome(repoPath || ''));
+    const exists = await stat(root).then((s) => s.isDirectory()).catch(() => false);
+    if (!exists) return send(res, 400, { error: 'Project path is not readable' });
+    const args = target === 'terminal' ? ['-a', 'Terminal', root] : [root];
+    const result = await new Promise((resolve) => {
+      execFile('open', args, { timeout: 8000 }, (error) => resolve({ ok: !error, error }));
+    });
+    if (!result.ok) return send(res, 500, { error: 'Open command failed' });
+    return send(res, 200, { ok: true });
+  }
+
   const treeMatch = url.pathname.match(/^\/api\/projects\/([^/]+)\/tree$/);
   if (req.method === 'GET' && treeMatch) {
     const state = await loadState();

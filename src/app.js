@@ -1,4 +1,5 @@
 import { invoke as tauriInvokeCore } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
 const STORE = 'devflow_v3';
 const COLORS = ['#185FA5','#639922','#D85A30','#854F0B','#534AB7','#993556','#0F6E56','#5F5E5A'];
@@ -67,7 +68,7 @@ function defaults() {
         'package.json': { type:'file', content:'{\n  "name": "api-backend",\n  "version": "1.0.0",\n  "scripts": {\n    "dev": "nodemon src/index.js",\n    "start": "node src/index.js"\n  },\n  "dependencies": {\n    "express": "^4.18.0",\n    "jsonwebtoken": "^9.0.0",\n    "bcrypt": "^5.1.0",\n    "pg": "^8.11.0"\n  }\n}' }
       }
     },
-    settings: { author: 'you' }
+    settings: { author: 'you', ollamaModel: 'llama3.2:3b', lastPanel: 'overview' }
   };
 }
 
@@ -115,6 +116,8 @@ async function tauriApi(invoke, path, options = {}) {
   if (path === '/api/projects/inspect' && method === 'POST') return invoke('inspect_project', { repoPath: body.repoPath || '' });
   if (path === '/api/sync' && method === 'POST') return invoke('sync_workspace');
   if (path === '/api/ai/chat' && method === 'POST') return invoke('ollama_chat', body);
+  if (path === '/api/ollama/status' && method === 'GET') return invoke('ollama_status');
+  if (path === '/api/projects/open' && method === 'POST') return invoke('open_project_path', { path: body.path || '', target: body.target || 'finder' });
   const treeMatch = path.match(/^\/api\/projects\/([^/]+)\/tree$/);
   if (treeMatch && method === 'GET') return invoke('project_tree', { projectId: decodeURIComponent(treeMatch[1]) });
   const fileMatch = path.match(/^\/api\/projects\/([^/]+)\/file\?path=(.*)$/);
@@ -134,7 +137,7 @@ function setRuntimeStatus(text, live = serverBacked) {
 }
 
 async function hydrateFromServer() {
-  if (!API_BASE) return;
+  if (!API_BASE && !tauriInvoke()) return;
   try {
     const state = await api('/api/state');
     db = { projects:[], tasks:[], notes:[], commits:[], files:{}, settings:{ author:'you' }, ...state };
@@ -200,11 +203,14 @@ function showPanel(name) {
   const nav = document.getElementById('nav-' + name);
   if (nav) nav.classList.add('active');
   currentPanel = name;
-  const labels = { overview:'Overview', agenda:'Agenda', notes:'Notes', commits:'Commits', files:'Files', ai:'AI Assistant' };
+  const labels = { overview:'Overview', agenda:'Agenda', notes:'Notes', commits:'Commits', files:'Files', ai:'AI Assistant', settings:'Settings' };
   document.getElementById('topbar-title').textContent = labels[name] || name;
-  const actions = { overview:['ti-refresh','Refresh'], agenda:['ti-plus','Add task'], notes:['ti-plus','New note'], commits:['ti-git-commit','Log commit'], files:['ti-clipboard','Paste code'], ai:['ti-brain','Ask AI'] };
+  const actions = { overview:['ti-refresh','Refresh'], agenda:['ti-plus','Add task'], notes:['ti-plus','New note'], commits:['ti-git-commit','Log commit'], files:['ti-clipboard','Paste code'], ai:['ti-brain','Ask AI'], settings:['ti-device-floppy','Save'] };
   const [icon, label] = actions[name] || ['ti-refresh','Refresh'];
   document.getElementById('topbar-action-btn').innerHTML = `<i class="ti ${icon}"></i> ${label}`;
+  if (!db.settings) db.settings = {};
+  db.settings.lastPanel = name;
+  save();
   updateBadges();
   if (name === 'overview') renderOverview();
   if (name === 'agenda') { renderAgenda(); populateSelects(); }
@@ -212,6 +218,7 @@ function showPanel(name) {
   if (name === 'commits') { renderCommits(); populateSelects(); }
   if (name === 'files') { renderFileProjSel(); renderFileTree(); }
   if (name === 'ai' && document.getElementById('ai-messages').children.length === 0) initAI();
+  if (name === 'settings') renderSettings();
 }
 
 function topbarAction() {
@@ -220,6 +227,7 @@ function topbarAction() {
   else if (currentPanel === 'commits') openModal('modal-commit');
   else if (currentPanel === 'files') document.getElementById('paste-area').focus();
   else if (currentPanel === 'ai') document.getElementById('ai-input').focus();
+  else if (currentPanel === 'settings') saveSettings();
   else refreshWorkspace();
 }
 
@@ -230,7 +238,7 @@ function updateBadges() {
   document.getElementById('badge-notes').textContent = db.notes.length;
   document.getElementById('badge-commits').textContent = db.commits.length;
   document.getElementById('badge-files').textContent = db.projects.length;
-  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: 'Ollama' }[currentPanel] || '';
+  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: 'Ollama', settings: 'local' }[currentPanel] || '';
 }
 
 async function refreshWorkspace() {
@@ -353,6 +361,17 @@ async function inspectProjectPath() {
   }
 }
 
+async function chooseProjectFolder() {
+  try {
+    const selected = await openDialog({ directory: true, multiple: false, title: 'Choose repository folder' });
+    if (!selected) return;
+    document.getElementById('pf-url').value = selected;
+    await inspectProjectPath();
+  } catch(e) {
+    setRuntimeStatus(e.message || 'folder picker unavailable', false);
+  }
+}
+
 function deleteProject(id) {
   if (!confirm('Delete this project and all its associated data? This cannot be undone.')) return;
   db.projects = db.projects.filter(p => p.id !== id);
@@ -363,6 +382,16 @@ function deleteProject(id) {
   save();
   renderSidebar();
   renderOverview();
+}
+
+async function openProject(id, target) {
+  const p = proj(id);
+  if (!p?.url) return;
+  try {
+    await api('/api/projects/open', { method:'POST', body: JSON.stringify({ path:p.url, target }) });
+  } catch(e) {
+    setRuntimeStatus(e.message || 'open failed', false);
+  }
 }
 
 // OVERVIEW
@@ -409,7 +438,12 @@ function renderOverview() {
     const last = [...db.commits].filter(c => c.projId === p.id).sort((a,b) => b.date-a.date)[0];
     const typeMap = { github:'blue', local:'green', gitlab:'amber', other:'gray' };
     const stack = p.stack ? p.stack.split(',').slice(0,3).map(s => `<span class="tag tag-gray" style="font-size:10px">${esc(s.trim())}</span>`).join(' ') : '';
-    const gitBits = p.git?.isGit ? `<span class="tag tag-${p.git.dirty ? 'amber' : 'green'}" style="font-size:10px">${p.git.dirty ? p.git.dirty + ' changed' : 'clean'}</span><span class="tag tag-gray" style="font-size:10px">${p.git.branch || 'git'}</span>` : '';
+    const gitBits = p.git?.isGit ? [
+      `<span class="tag tag-${p.git.dirty ? 'amber' : 'green'}" style="font-size:10px">${p.git.dirty ? p.git.dirty + ' changed' : 'clean'}</span>`,
+      `<span class="tag tag-gray" style="font-size:10px">${esc(p.git.branch || 'git')}</span>`,
+      p.git.ahead ? `<span class="tag tag-blue" style="font-size:10px">ahead ${p.git.ahead}</span>` : '',
+      p.git.behind ? `<span class="tag tag-red" style="font-size:10px">behind ${p.git.behind}</span>` : ''
+    ].join('') : '';
     return `<div style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:var(--radius-md);cursor:default;margin-bottom:2px;border-bottom:0.5px solid var(--border-light)">
       <span class="proj-dot" style="background:${safeColor(p.color)};width:10px;height:10px;flex-shrink:0"></span>
       <div style="flex:1;min-width:0">
@@ -426,6 +460,10 @@ function renderOverview() {
         <span class="tag tag-${typeMap[p.type]||'gray'}">${esc(p.type)}</span>
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${last ? timeAgo(last.date) : 'No commits'}</div>
       </div>
+      ${p.type === 'local' && p.url ? `<div class="row" style="gap:4px">
+        <button class="btn btn-sm" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open in Finder"><i class="ti ti-folder"></i></button>
+        <button class="btn btn-sm" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i></button>
+      </div>` : ''}
       <button class="btn btn-sm btn-danger" data-action="delete-project" data-id="${esc(p.id)}" title="Delete project"><i class="ti ti-trash"></i></button>
     </div>`;
   }).join('') : `<div class="empty-state"><i class="ti ti-folder-plus"></i><p>No projects yet</p><div class="sub">Add your first project to get started</div></div>`;
@@ -878,6 +916,60 @@ function aiQuick(msg) {
   sendAI();
 }
 
+function renderSettings() {
+  if (!db.settings) db.settings = {};
+  document.getElementById('settings-author').value = db.settings.author || '';
+  document.getElementById('settings-ollama-model').value = db.settings.ollamaModel || 'llama3.2:3b';
+  document.getElementById('settings-status').textContent = 'Settings are saved locally.';
+}
+
+function saveSettings() {
+  if (!db.settings) db.settings = {};
+  db.settings.author = document.getElementById('settings-author').value.trim() || 'you';
+  db.settings.ollamaModel = document.getElementById('settings-ollama-model').value.trim() || 'llama3.2:3b';
+  save();
+  document.getElementById('settings-status').textContent = 'Saved just now.';
+  document.getElementById('ai-status').textContent = 'Powered by Ollama · ' + db.settings.ollamaModel;
+}
+
+async function refreshOllamaModels() {
+  const status = document.getElementById('settings-status');
+  const select = document.getElementById('settings-ollama-models');
+  status.textContent = 'Checking Ollama...';
+  try {
+    const data = await api('/api/ollama/status');
+    select.innerHTML = '<option value="">Installed models</option>';
+    (data.models || []).forEach((model) => {
+      const option = document.createElement('option');
+      option.value = model;
+      option.textContent = model;
+      select.appendChild(option);
+    });
+    status.textContent = data.models?.length ? `Ollama is running. ${data.models.length} model${data.models.length === 1 ? '' : 's'} found.` : 'Ollama is running, but no models were returned.';
+  } catch(e) {
+    status.textContent = 'Ollama is not reachable at 127.0.0.1:11434.';
+  }
+}
+
+async function testOllama() {
+  saveSettings();
+  const status = document.getElementById('settings-status');
+  status.textContent = 'Sending test prompt...';
+  try {
+    const data = await api('/api/ai/chat', {
+      method:'POST',
+      body: JSON.stringify({
+        model: db.settings.ollamaModel,
+        system: 'Reply with one short sentence confirming DevFlow local AI is working.',
+        messages: [{ role:'user', content:'Test the connection.' }]
+      })
+    });
+    status.textContent = 'Ollama replied: ' + (data.reply || '').slice(0, 160);
+  } catch(e) {
+    status.textContent = e.message || 'Ollama test failed.';
+  }
+}
+
 function bindEvents() {
   document.addEventListener('click', (event) => {
     const target = event.target.closest('[data-action]');
@@ -905,6 +997,11 @@ function bindEvents() {
     else if (action === 'inspect-project') inspectProjectPath();
     else if (action === 'save-project') saveProject();
     else if (action === 'save-commit') saveCommit();
+    else if (action === 'choose-project-folder') chooseProjectFolder();
+    else if (action === 'open-project-path') openProject(target.dataset.id, target.dataset.target);
+    else if (action === 'save-settings') saveSettings();
+    else if (action === 'test-ollama') testOllama();
+    else if (action === 'refresh-ollama-models') refreshOllamaModels();
     else if (action === 'pick-color') pickColor(target, target.dataset.color);
     else if (action === 'toggle-task') toggleTask(target.dataset.id);
     else if (action === 'delete-project') deleteProject(target.dataset.id);
@@ -935,6 +1032,9 @@ function bindEvents() {
     else if (action === 'render-commits') renderCommits();
     else if (action === 'render-agenda') renderAgenda();
     else if (action === 'render-file-tree') renderFileTree();
+    if (event.target.id === 'settings-ollama-models' && event.target.value) {
+      document.getElementById('settings-ollama-model').value = event.target.value;
+    }
   });
 
   document.addEventListener('keydown', (event) => {
@@ -953,5 +1053,6 @@ async function init() {
   setFilter('all');
   setCommitFilter('all');
   initAI();
+  if (db.settings?.lastPanel && db.settings.lastPanel !== 'overview') showPanel(db.settings.lastPanel);
 }
 init();

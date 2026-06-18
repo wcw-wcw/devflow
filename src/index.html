@@ -46,6 +46,9 @@
       <div class="sidebar-item" data-action="show-panel" data-panel="ai" id="nav-ai">
         <i class="ti ti-brain"></i> AI Assistant
       </div>
+      <div class="sidebar-item" data-action="show-panel" data-panel="settings" id="nav-settings">
+        <i class="ti ti-settings"></i> Settings
+      </div>
     </div>
 
     <div class="sidebar-projects">
@@ -267,6 +270,41 @@
       </div>
     </div>
 
+    <!-- SETTINGS -->
+    <div class="panel content" id="panel-settings" style="max-width:760px;margin:0 auto;width:100%">
+      <div class="card mb12">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-settings"></i> App settings</span>
+          <button class="btn btn-sm btn-primary" data-action="save-settings"><i class="ti ti-device-floppy"></i> Save</button>
+        </div>
+        <div class="grid2">
+          <div class="form-group">
+            <label class="form-label">Author</label>
+            <input type="text" id="settings-author" placeholder="Your name">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Ollama model</label>
+            <input type="text" id="settings-ollama-model" placeholder="llama3.2:3b">
+          </div>
+        </div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" data-action="test-ollama"><i class="ti ti-brain"></i> Test Ollama</button>
+          <button class="btn btn-sm" data-action="refresh-ollama-models"><i class="ti ti-refresh"></i> Refresh models</button>
+          <select id="settings-ollama-models" style="max-width:260px"></select>
+        </div>
+        <div id="settings-status" class="mt12" style="font-size:12px;color:var(--text-tertiary)">Settings are saved locally.</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-package"></i> Desktop build</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-secondary);line-height:1.7">
+          <div><code>npm run tauri:build</code> creates the packaged app.</div>
+          <div><code>src-tauri/target/release/bundle/macos/DevFlow.app</code></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -290,7 +328,10 @@
     <div class="form-group">
       <label class="form-label">URL or local path</label>
       <input type="text" id="pf-url" placeholder="https://github.com/you/repo  or  ~/projects/app">
-      <button class="btn btn-sm mt8" type="button" data-action="inspect-project"><i class="ti ti-scan"></i> Inspect local path</button>
+      <div class="row mt8" style="gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm" type="button" data-action="choose-project-folder"><i class="ti ti-folder"></i> Choose folder</button>
+        <button class="btn btn-sm" type="button" data-action="inspect-project"><i class="ti ti-scan"></i> Inspect local path</button>
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Description</label>

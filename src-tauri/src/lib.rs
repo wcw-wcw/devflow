@@ -81,6 +81,25 @@ struct ChatMessage {
     content: String,
 }
 
+fn http_localhost(port: u16, request: &str, timeout_secs: u64) -> Result<String, String> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port))
+        .map_err(|error| format!("Could not connect to 127.0.0.1:{port}: {error}"))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(timeout_secs)))
+        .map_err(|error| format!("Could not set read timeout: {error}"))?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| format!("Could not send request: {error}"))?;
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|error| format!("Could not read response: {error}"))?;
+    let (_, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "Invalid HTTP response".to_string())?;
+    Ok(body.to_string())
+}
+
 fn default_state() -> Value {
     json!({
         "projects": [],
@@ -445,32 +464,50 @@ fn ollama_chat(model: Option<String>, system: Option<String>, messages: Option<V
     }))
     .map_err(|error| format!("Could not serialize Ollama request: {error}"))?;
 
-    let mut stream = TcpStream::connect("127.0.0.1:11434")
-        .map_err(|error| format!("Could not connect to Ollama at 127.0.0.1:11434: {error}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(60)))
-        .map_err(|error| format!("Could not set Ollama read timeout: {error}"))?;
     let request = format!(
         "POST /api/chat HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.as_bytes().len(),
         body
     );
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|error| format!("Could not send Ollama request: {error}"))?;
-
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|error| format!("Could not read Ollama response: {error}"))?;
-    let (_, body) = response
-        .split_once("\r\n\r\n")
-        .ok_or_else(|| "Ollama returned an invalid HTTP response".to_string())?;
-    let data: Value = serde_json::from_str(body).map_err(|error| format!("Ollama returned invalid JSON: {error}"))?;
+    let body = http_localhost(11434, &request, 60)?;
+    let data: Value = serde_json::from_str(&body).map_err(|error| format!("Ollama returned invalid JSON: {error}"))?;
     if let Some(error) = data.get("error").and_then(Value::as_str) {
         return Err(error.to_string());
     }
     Ok(json!({ "reply": data.pointer("/message/content").and_then(Value::as_str).unwrap_or("") }))
+}
+
+#[tauri::command]
+fn ollama_status() -> Result<Value, String> {
+    let request = "GET /api/tags HTTP/1.1\r\nHost: 127.0.0.1:11434\r\nConnection: close\r\n\r\n";
+    let body = http_localhost(11434, request, 5)?;
+    let data: Value = serde_json::from_str(&body).map_err(|error| format!("Ollama returned invalid JSON: {error}"))?;
+    let models = data
+        .get("models")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|model| model.get("name").and_then(Value::as_str).map(str::to_string))
+        .collect::<Vec<String>>();
+    Ok(json!({ "ok": true, "models": models }))
+}
+
+#[tauri::command]
+fn open_project_path(path: String, target: String) -> Result<Value, String> {
+    let root = expand_home(&path)
+        .canonicalize()
+        .map_err(|error| format!("Project path is not readable: {error}"))?;
+    let status = if target == "terminal" {
+        Command::new("open").arg("-a").arg("Terminal").arg(&root).status()
+    } else {
+        Command::new("open").arg(&root).status()
+    }
+    .map_err(|error| format!("Could not open project path: {error}"))?;
+    if !status.success() {
+        return Err("Open command failed".to_string());
+    }
+    Ok(json!({ "ok": true }))
 }
 
 pub fn run() {
@@ -482,8 +519,11 @@ pub fn run() {
             sync_workspace,
             project_tree,
             read_project_file,
-            ollama_chat
+            ollama_chat,
+            ollama_status,
+            open_project_path
         ])
+        .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())
         .expect("error while running DevFlow");
 }

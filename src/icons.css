@@ -46,3 +46,5 @@
 .ti-palette::before { content: "P"; }
 .ti-brand-html5::before { content: "H"; }
 .ti-lock::before { content: "#"; }
+.ti-settings::before { content: "⚙"; }
+.ti-package::before { content: "□"; }

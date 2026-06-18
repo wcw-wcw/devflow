@@ -10,10 +10,12 @@
     "dev:api": "node server.js",
     "build": "vite build",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "app:open": "open src-tauri/target/release/bundle/macos/DevFlow.app"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
