@@ -11,12 +11,13 @@
 
 .ti::before { content: "•"; }
 .ti-terminal-2::before { content: ">"; }
-.ti-layout-dashboard::before { content: "□"; }
+.ti-layout-dashboard::before { content: "▦"; }
 .ti-checklist::before { content: "✓"; }
 .ti-notebook::before { content: "N"; }
 .ti-git-commit::before { content: "●"; }
-.ti-folder-code::before,
-.ti-folder::before { content: "▣"; }
+.ti-folder::before { content: "▰"; }
+.ti-folder-code::before { content: "▱"; }
+.ti-folder-plus::before { content: "+▰"; font-size: .74em; }
 .ti-brain::before { content: "*"; }
 .ti-plus::before { content: "+"; }
 .ti-arrow-right::before { content: "→"; }
@@ -31,7 +32,7 @@
 .ti-list-check::before { content: "L"; }
 .ti-target::before { content: "◎"; }
 .ti-file-description::before,
-.ti-file::before { content: "F"; }
+.ti-file::before { content: "▤"; }
 .ti-git-branch::before { content: "⑂"; }
 .ti-scan::before { content: "⌗"; }
 .ti-components::before { content: "C"; }
@@ -47,4 +48,9 @@
 .ti-brand-html5::before { content: "H"; }
 .ti-lock::before { content: "#"; }
 .ti-settings::before { content: "⚙"; }
-.ti-package::before { content: "□"; }
+.ti-package::before { content: "▧"; }
+.ti-brand-github::before { content: "GH"; font-size: .66em; letter-spacing: -0.08em; }
+.ti-world::before { content: "◉"; }
+.ti-pencil::before { content: "✎"; }
+.ti-chevron-up::before { content: "⌃"; }
+.ti-chevron-down::before { content: "⌄"; }

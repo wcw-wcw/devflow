@@ -80,6 +80,7 @@ let commitFilter = 'all';
 let selectedColor = COLORS[0];
 let selectedProjectId = null;
 let editingProjectId = null;
+let draggedProjectId = null;
 let noteAutoSave = null;
 let serverBacked = false;
 let fileContentCache = {};
@@ -159,6 +160,10 @@ function save() {
 }
 
 function proj(id) { return db.projects.find(p => p.id === id); }
+
+function ensureProjectFolders() {
+  if (!Array.isArray(db.projectFolders)) db.projectFolders = [];
+}
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({
@@ -317,19 +322,37 @@ async function refreshWorkspace() {
 
 // SIDEBAR
 function renderSidebar() {
+  ensureProjectFolders();
   const el = document.getElementById('proj-list');
-  el.innerHTML = db.projects.map((p, index) => `
-    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" data-action="show-project" data-id="${esc(p.id)}">
+  const projectItem = (p) => `
+    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" draggable="true" data-drag-project-id="${esc(p.id)}" data-drop-project-id="${esc(p.id)}" data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(p.name)}</span>
+      <span class="proj-sidebar-name">${esc(p.name)}</span>
       <span class="tag tag-${projectLocalPath(p)?'green':projectRepoUrl(p)?'blue':'gray'}" style="font-size:9px;padding:1px 5px">${projectLocalPath(p) ? 'local' : projectRepoUrl(p) ? 'github' : esc(p.type || 'manual')}</span>
       <span class="proj-sidebar-actions">
-        ${projectLocalPath(p) ? `<button class="sidebar-icon-btn" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open folder"><i class="ti ti-folder"></i></button>` : ''}
-        <button class="sidebar-icon-btn" data-action="move-project" data-id="${esc(p.id)}" data-direction="up" title="Move up" ${index === 0 ? 'disabled' : ''}><i class="ti ti-chevron-up"></i></button>
-        <button class="sidebar-icon-btn" data-action="move-project" data-id="${esc(p.id)}" data-direction="down" title="Move down" ${index === db.projects.length - 1 ? 'disabled' : ''}><i class="ti ti-chevron-down"></i></button>
+        <button class="sidebar-icon-btn sidebar-icon-btn-wide" data-action="open-project-files" data-id="${esc(p.id)}" title="Files"><i class="ti ti-folder"></i><span>Files</span></button>
       </span>
-    </div>
-  `).join('');
+    </div>`;
+  const folders = db.projectFolders.map(folder => {
+    const children = db.projects.filter(p => p.folderId === folder.id);
+    return `
+      <div class="sidebar-folder" data-drop-folder-id="${esc(folder.id)}">
+        <div class="sidebar-folder-head">
+          <span><i class="ti ti-folder"></i> ${esc(folder.name)}</span>
+          <span class="sidebar-folder-actions">
+            <span class="sidebar-badge">${children.length}</span>
+            <button class="sidebar-icon-btn" data-action="rename-folder" data-id="${esc(folder.id)}" title="Rename folder"><i class="ti ti-pencil"></i></button>
+            <button class="sidebar-icon-btn" data-action="delete-folder" data-id="${esc(folder.id)}" title="Delete folder"><i class="ti ti-x"></i></button>
+          </span>
+        </div>
+        <div class="sidebar-folder-body">${children.map(projectItem).join('') || '<div class="sidebar-folder-empty">Drop projects here</div>'}</div>
+      </div>`;
+  }).join('');
+  const unfiled = db.projects.filter(p => !p.folderId).map(projectItem).join('');
+  el.innerHTML = `
+    <div class="sidebar-drop-root" data-drop-folder-id="">${unfiled || '<div class="sidebar-folder-empty">No unfiled projects</div>'}</div>
+    ${folders}
+  `;
 
   // Color picker in modal
   const cp = document.getElementById('color-picker');
@@ -527,6 +550,62 @@ function moveProject(id, direction) {
   if (currentPanel === 'files') renderFileProjSel();
 }
 
+function newFolder() {
+  ensureProjectFolders();
+  const name = prompt('Folder name');
+  if (!name?.trim()) return;
+  db.projectFolders.push({ id:'f' + Date.now(), name:name.trim(), created:Date.now() });
+  save();
+  renderSidebar();
+}
+
+function renameFolder(id) {
+  ensureProjectFolders();
+  const folder = db.projectFolders.find(f => f.id === id);
+  if (!folder) return;
+  const name = prompt('Folder name', folder.name);
+  if (!name?.trim()) return;
+  folder.name = name.trim();
+  save();
+  renderSidebar();
+}
+
+function deleteFolder(id) {
+  ensureProjectFolders();
+  const folder = db.projectFolders.find(f => f.id === id);
+  if (!folder) return;
+  if (!confirm(`Delete "${folder.name}"? Projects will stay in the sidebar.`)) return;
+  db.projectFolders = db.projectFolders.filter(f => f.id !== id);
+  db.projects.forEach(p => { if (p.folderId === id) delete p.folderId; });
+  save();
+  renderSidebar();
+}
+
+function assignProjectFolder(projectId, folderId) {
+  const p = proj(projectId);
+  if (!p) return;
+  if (folderId) p.folderId = folderId;
+  else delete p.folderId;
+  save();
+  renderSidebar();
+  if (currentPanel === 'overview') renderOverview();
+}
+
+function dropProjectOnProject(projectId, targetId) {
+  if (!projectId || projectId === targetId) return;
+  const movingIndex = db.projects.findIndex(p => p.id === projectId);
+  const target = proj(targetId);
+  if (movingIndex < 0 || !target) return;
+  const [moving] = db.projects.splice(movingIndex, 1);
+  if (target.folderId) moving.folderId = target.folderId;
+  else delete moving.folderId;
+  const targetIndex = db.projects.findIndex(p => p.id === targetId);
+  db.projects.splice(targetIndex, 0, moving);
+  save();
+  renderSidebar();
+  if (currentPanel === 'overview') renderOverview();
+}
+
 async function openProject(id, target) {
   const p = proj(id);
   const localPath = projectLocalPath(p);
@@ -546,9 +625,9 @@ function projectActions(p, compact = false) {
   return `
     ${repoUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(repoUrl)}" title="Open GitHub repository"><i class="ti ti-brand-github"></i>${compact ? '' : ' GitHub'}</button>` : ''}
     ${deployUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(deployUrl)}" title="Open deployment"><i class="ti ti-world"></i>${compact ? '' : ' Deployment'}</button>` : ''}
-    <button class="btn ${size}" data-action="open-project-files" data-id="${esc(p.id)}" title="Browse project files"><i class="ti ti-folder-code"></i>${compact ? '' : ' Files'}</button>
-    ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i>${compact ? '' : ' Terminal'}</button>` : ''}
+    <button class="btn ${size}" data-action="open-project-files" data-id="${esc(p.id)}" title="Browse project files"><i class="ti ti-folder"></i>${compact ? '' : ' Files'}</button>
     ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open in Finder"><i class="ti ti-folder"></i>${compact ? '' : ' Finder'}</button>` : ''}
+    ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i>${compact ? '' : ' Terminal'}</button>` : ''}
     <button class="btn ${size}" data-action="open-project-settings" data-id="${esc(p.id)}" title="Project settings"><i class="ti ti-settings"></i>${compact ? '' : ' Settings'}</button>
   `;
 }
@@ -1288,6 +1367,9 @@ function bindEvents() {
     else if (action === 'open-project-notes') openProjectNotes(target.dataset.id);
     else if (action === 'open-project-note') openProjectNote(target.dataset.id);
     else if (action === 'move-project') moveProject(target.dataset.id, target.dataset.direction);
+    else if (action === 'new-folder') newFolder();
+    else if (action === 'rename-folder') renameFolder(target.dataset.id);
+    else if (action === 'delete-folder') deleteFolder(target.dataset.id);
     else if (action === 'open-external') openExternal(target.dataset.url);
     else if (action === 'save-settings') saveSettings();
     else if (action === 'test-ollama') testOllama();
@@ -1331,6 +1413,42 @@ function bindEvents() {
     const action = event.target.dataset?.keyAction;
     if (action === 'add-task-enter' && event.key === 'Enter') addTask();
     if (action === 'send-ai-enter' && event.key === 'Enter' && !event.shiftKey) sendAI();
+  });
+
+  document.addEventListener('dragstart', (event) => {
+    const item = event.target.closest('[data-drag-project-id]');
+    if (!item) return;
+    draggedProjectId = item.dataset.dragProjectId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', draggedProjectId);
+    item.classList.add('dragging');
+  });
+
+  document.addEventListener('dragend', () => {
+    document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
+    draggedProjectId = null;
+  });
+
+  document.addEventListener('dragover', (event) => {
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
+    if (!target || !draggedProjectId) return;
+    event.preventDefault();
+    target.classList.add('drop-target');
+  });
+
+  document.addEventListener('dragleave', (event) => {
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
+    if (target) target.classList.remove('drop-target');
+  });
+
+  document.addEventListener('drop', (event) => {
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
+    if (!target || !draggedProjectId) return;
+    event.preventDefault();
+    if (target.dataset.dropProjectId) dropProjectOnProject(draggedProjectId, target.dataset.dropProjectId);
+    else assignProjectFolder(draggedProjectId, target.dataset.dropFolderId || '');
+    document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
+    draggedProjectId = null;
   });
 }
 
