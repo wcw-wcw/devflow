@@ -107,6 +107,10 @@ function projectRepoUrl(project, repoInfo) {
   return cleanGithubUrl(project?.repoUrl || (project?.type === 'github' ? project?.url : '') || repoInfo?.remoteUrl || '');
 }
 
+function isHttpUrl(value = '') {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
 async function inspectRepo(repoPath) {
   const info = { path: repoPath, exists: false, isGit: false, branch: '', dirty: 0, ahead: 0, behind: 0, remoteUrl: '', lastCommit: null };
   try {
@@ -293,6 +297,16 @@ async function handleApi(req, res, url) {
       execFile('open', args, { timeout: 8000 }, (error) => resolve({ ok: !error, error }));
     });
     if (!result.ok) return send(res, 500, { error: 'Open command failed' });
+    return send(res, 200, { ok: true });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/open-url') {
+    const { url: externalUrl } = await readJson(req);
+    if (!isHttpUrl(externalUrl)) return send(res, 400, { error: 'Only http and https URLs can be opened' });
+    const result = await new Promise((resolve) => {
+      execFile('open', [externalUrl], { timeout: 8000 }, (error) => resolve({ ok: !error, error }));
+    });
+    if (!result.ok) return send(res, 500, { error: 'Open URL command failed' });
     return send(res, 200, { ok: true });
   }
 

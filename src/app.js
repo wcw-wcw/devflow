@@ -120,6 +120,7 @@ async function tauriApi(invoke, path, options = {}) {
   if (path === '/api/ai/chat' && method === 'POST') return invoke('ollama_chat', body);
   if (path === '/api/ollama/status' && method === 'GET') return invoke('ollama_status');
   if (path === '/api/projects/open' && method === 'POST') return invoke('open_project_path', { path: body.path || '', target: body.target || 'finder' });
+  if (path === '/api/open-url' && method === 'POST') return invoke('open_external_url', { url: body.url || '' });
   const treeMatch = path.match(/^\/api\/projects\/([^/]+)\/tree$/);
   if (treeMatch && method === 'GET') return invoke('project_tree', { projectId: decodeURIComponent(treeMatch[1]) });
   const fileMatch = path.match(/^\/api\/projects\/([^/]+)\/file\?path=(.*)$/);
@@ -217,10 +218,14 @@ function commitUrl(commit) {
   return commit.url || githubCommitUrl(proj(commit.projId), commit.hash);
 }
 
-function openExternal(url) {
+async function openExternal(url) {
   const safe = String(url || '').trim();
   if (!/^https?:\/\//i.test(safe)) return;
-  window.open(safe, '_blank', 'noopener,noreferrer');
+  try {
+    await api('/api/open-url', { method:'POST', body: JSON.stringify({ url: safe }) });
+  } catch(e) {
+    window.open(safe, '_blank', 'noopener,noreferrer');
+  }
 }
 
 // MODALS
@@ -1157,6 +1162,12 @@ async function testOllama() {
 
 function bindEvents() {
   document.addEventListener('click', (event) => {
+    const link = event.target.closest('a[href^="http://"], a[href^="https://"]');
+    if (link) {
+      event.preventDefault();
+      openExternal(link.href);
+      return;
+    }
     const target = event.target.closest('[data-action]');
     if (!target) return;
     const action = target.dataset.action;

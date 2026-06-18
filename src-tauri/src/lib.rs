@@ -590,6 +590,22 @@ fn open_project_path(path: String, target: String) -> Result<Value, String> {
     Ok(json!({ "ok": true }))
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<Value, String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err("Only http and https URLs can be opened".to_string());
+    }
+    let status = Command::new("open")
+        .arg(trimmed)
+        .status()
+        .map_err(|error| format!("Could not open URL: {error}"))?;
+    if !status.success() {
+        return Err("Open URL command failed".to_string());
+    }
+    Ok(json!({ "ok": true }))
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -601,7 +617,8 @@ pub fn run() {
             read_project_file,
             ollama_chat,
             ollama_status,
-            open_project_path
+            open_project_path,
+            open_external_url
         ])
         .plugin(tauri_plugin_dialog::init())
         .run(tauri::generate_context!())
