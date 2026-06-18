@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.will.devflow",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run build",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:4177"
+    "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,
