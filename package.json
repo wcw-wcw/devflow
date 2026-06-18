@@ -1,0 +1,20 @@
+{
+  "name": "devflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first dashboard for development repos, notes, tasks, commits, and files.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "node scripts/build-frontend.mjs",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
