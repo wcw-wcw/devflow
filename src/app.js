@@ -288,12 +288,18 @@ function updateBadges() {
 }
 
 async function refreshWorkspace() {
-  if (!serverBacked) { renderOverview(); return; }
+  if (!serverBacked) {
+    setRuntimeStatus('local runtime unavailable', false);
+    if (currentPanel === 'overview') renderOverview();
+    if (currentPanel === 'project') renderProjectDetail();
+    return;
+  }
   setRuntimeStatus('syncing repos...', true);
   try {
     db = await api('/api/sync', { method:'POST', body:'{}' });
     localStorage.setItem(STORE, JSON.stringify(db));
-    setRuntimeStatus('local runtime', true);
+    const synced = db.commits.filter(commit => commit.source === 'git').length;
+    setRuntimeStatus(synced ? `synced ${synced} commit${synced === 1 ? '' : 's'}` : 'no commits found', true);
     renderSidebar();
     if (currentPanel === 'overview') renderOverview();
     if (currentPanel === 'project') renderProjectDetail();
@@ -621,14 +627,17 @@ function renderProjectDetail() {
           <div><span>Branch</span><strong>${esc(p.git.branch || 'detached')}</strong></div>
           <div><span>Working tree</span><strong>${p.git.dirty ? esc(p.git.dirty + ' changed') : 'Clean'}</strong></div>
           <div><span>Ahead / behind</span><strong>${p.git.ahead || 0} / ${p.git.behind || 0}</strong></div>
-          <div><span>Remote</span><strong>${p.git.remoteUrl ? esc(cleanGithubUrl(p.git.remoteUrl)) : 'Not found'}</strong></div>
+          <div><span>Remote</span><strong>${p.git.remoteUrl || repoUrl ? esc(cleanGithubUrl(p.git.remoteUrl || repoUrl)) : 'Not found'}</strong></div>
         </div>` : `<div class="empty-state" style="padding:20px"><i class="ti ti-git-branch"></i><p>${localPath ? 'No git repo found' : 'Attach a local repo to sync commits'}</p></div>`}
       </div>
     </div>
     <div class="card">
       <div class="card-header">
         <span class="card-title"><i class="ti ti-git-commit"></i> Recent commits</span>
-        <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+        <div class="row" style="gap:6px">
+          <button class="btn btn-sm" data-action="sync-commits"><i class="ti ti-refresh"></i> Sync</button>
+          <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+        </div>
       </div>
       <div class="commit-list">
         ${projectCommits.length ? projectCommits.slice(0, 12).map(c => `<div class="commit-item">
@@ -1157,6 +1166,7 @@ function bindEvents() {
     else if (action === 'close-modal') closeModal(target.dataset.modal);
     else if (action === 'modal-bg-close') bgClose(event, target.dataset.modal);
     else if (action === 'topbar-action') topbarAction();
+    else if (action === 'sync-commits') refreshWorkspace();
     else if (action === 'add-task') addTask();
     else if (action === 'set-filter') setFilter(target.dataset.filter);
     else if (action === 'clear-done') clearDone();

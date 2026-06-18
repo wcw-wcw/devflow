@@ -85,7 +85,10 @@
         <div class="card">
           <div class="card-header">
             <span class="card-title"><i class="ti ti-git-commit"></i> Recent commits</span>
-            <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+            <div class="row" style="gap:6px">
+              <button class="btn btn-sm" data-action="sync-commits"><i class="ti ti-refresh"></i> Sync</button>
+              <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+            </div>
           </div>
           <div id="ov-commits" class="commit-list"></div>
         </div>

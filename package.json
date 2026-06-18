@@ -11,7 +11,7 @@
     "build": "vite build",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "app:open": "open src-tauri/target/release/bundle/macos/DevFlow.app"
+    "app:open": "npm run tauri:build && open src-tauri/target/release/bundle/macos/DevFlow.app"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
