@@ -105,6 +105,11 @@
       </div>
     </div>
 
+    <!-- PROJECT DETAIL -->
+    <div class="panel content" id="panel-project">
+      <div id="project-detail"></div>
+    </div>
+
     <!-- AGENDA -->
     <div class="panel content" id="panel-agenda">
       <div class="row mb16">
@@ -311,7 +316,7 @@
 <!-- PROJECT MODAL -->
 <div class="modal-bg" id="modal-project" data-action="modal-bg-close" data-modal="modal-project">
   <div class="modal">
-    <div class="modal-title"><i class="ti ti-git-branch"></i> Add project</div>
+    <div class="modal-title" id="project-modal-title"><i class="ti ti-git-branch"></i> Add project</div>
     <div class="form-group">
       <label class="form-label">Project name *</label>
       <input type="text" id="pf-name" placeholder="my-app">
@@ -326,12 +331,20 @@
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">URL or local path</label>
-      <input type="text" id="pf-url" placeholder="https://github.com/you/repo  or  ~/projects/app">
+      <label class="form-label">Local path</label>
+      <input type="text" id="pf-url" placeholder="~/projects/app">
       <div class="row mt8" style="gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm" type="button" data-action="choose-project-folder"><i class="ti ti-folder"></i> Choose folder</button>
         <button class="btn btn-sm" type="button" data-action="inspect-project"><i class="ti ti-scan"></i> Inspect local path</button>
       </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">GitHub repository URL</label>
+      <input type="url" id="pf-repo-url" placeholder="https://github.com/you/repo">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Deployment URL</label>
+      <input type="url" id="pf-deploy-url" placeholder="https://app.example.com">
     </div>
     <div class="form-group">
       <label class="form-label">Description</label>
@@ -347,7 +360,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn" data-action="close-modal" data-modal="modal-project">Cancel</button>
-      <button class="btn btn-primary" data-action="save-project"><i class="ti ti-check"></i> Add project</button>
+      <button class="btn btn-primary" data-action="save-project"><i class="ti ti-check"></i> <span id="project-save-label">Add project</span></button>
     </div>
   </div>
 </div>

@@ -24,6 +24,9 @@ struct Project {
     #[serde(default)]
     r#type: String,
     url: Option<String>,
+    local_path: Option<String>,
+    repo_url: Option<String>,
+    deploy_url: Option<String>,
     color: Option<String>,
     desc: Option<String>,
     stack: Option<String>,
@@ -40,6 +43,7 @@ struct RepoInfo {
     dirty: usize,
     ahead: usize,
     behind: usize,
+    remote_url: String,
     last_commit: Option<CommitInfo>,
 }
 
@@ -63,6 +67,7 @@ struct CommitEntry {
     branch: String,
     date: u64,
     source: String,
+    url: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -165,10 +170,18 @@ fn home_dir() -> PathBuf {
 }
 
 fn project_path(project: &Project) -> Option<PathBuf> {
-    if project.r#type != "local" {
-        return None;
-    }
-    project.url.as_deref().filter(|url| !url.is_empty()).map(expand_home)
+    project
+        .local_path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .or_else(|| {
+            if project.r#type == "local" {
+                project.url.as_deref().filter(|url| !url.is_empty())
+            } else {
+                None
+            }
+        })
+        .map(expand_home)
 }
 
 fn resolve_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
@@ -188,6 +201,40 @@ fn run_git(cwd: &Path, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+fn clean_github_url(url: &str) -> String {
+    let raw = url.trim();
+    if raw.is_empty() {
+        return String::new();
+    }
+    if let Some(rest) = raw.strip_prefix("git@github.com:") {
+        return format!("https://github.com/{}", rest.trim_end_matches(".git"));
+    }
+    if raw.starts_with("https://github.com/") || raw.starts_with("http://github.com/") {
+        return raw
+            .replacen("http://", "https://", 1)
+            .trim_end_matches(".git")
+            .trim_end_matches('/')
+            .to_string();
+    }
+    raw.to_string()
+}
+
+fn project_repo_url(project: &Project, repo: &RepoInfo) -> String {
+    project
+        .repo_url
+        .as_deref()
+        .filter(|url| !url.is_empty())
+        .or_else(|| {
+            if project.r#type == "github" {
+                project.url.as_deref().filter(|url| !url.is_empty())
+            } else {
+                None
+            }
+        })
+        .map(clean_github_url)
+        .unwrap_or_else(|| repo.remote_url.clone())
+}
+
 fn inspect_repo(repo_path: &Path) -> RepoInfo {
     let path = repo_path.to_string_lossy().to_string();
     let exists = repo_path.is_dir();
@@ -199,6 +246,7 @@ fn inspect_repo(repo_path: &Path) -> RepoInfo {
         dirty: 0,
         ahead: 0,
         behind: 0,
+        remote_url: String::new(),
         last_commit: None,
     };
     if !exists {
@@ -211,6 +259,9 @@ fn inspect_repo(repo_path: &Path) -> RepoInfo {
     }
 
     info.branch = run_git(repo_path, &["branch", "--show-current"]).unwrap_or_else(|| "detached".to_string());
+    info.remote_url = run_git(repo_path, &["remote", "get-url", "origin"])
+        .map(|url| clean_github_url(&url))
+        .unwrap_or_default();
     let status = run_git(repo_path, &["status", "--porcelain=v1", "--branch"]).unwrap_or_default();
     let lines: Vec<&str> = status.lines().collect();
     info.dirty = lines.iter().filter(|line| !line.starts_with("##")).count();
@@ -218,7 +269,7 @@ fn inspect_repo(repo_path: &Path) -> RepoInfo {
         info.ahead = parse_status_count(header, "ahead");
         info.behind = parse_status_count(header, "behind");
     }
-    if let Some(line) = run_git(repo_path, &["log", "-1", "--format=%h%x1f%s%x1f%an%x1f%ct"]) {
+    if let Some(line) = run_git(repo_path, &["log", "-1", "--format=%H%x1f%s%x1f%an%x1f%ct"]) {
         info.last_commit = parse_commit_line(&line);
     }
     info
@@ -254,20 +305,35 @@ fn git_commits(project: &Project, limit: usize) -> Vec<CommitEntry> {
     if !repo.is_git {
         return Vec::new();
     }
-    let Some(log) = run_git(&repo_path, &[&format!("-{limit}"), "--format=%h%x1f%s%x1f%an%x1f%ct"]) else {
+    let limit_arg = format!("-{limit}");
+    let args = if limit > 0 {
+        vec!["log", limit_arg.as_str(), "--format=%H%x1f%s%x1f%an%x1f%ct"]
+    } else {
+        vec!["log", "--format=%H%x1f%s%x1f%an%x1f%ct"]
+    };
+    let Some(log) = run_git(&repo_path, &args) else {
         return Vec::new();
     };
+    let repo_url = project_repo_url(project, &repo);
     log.lines()
         .filter_map(parse_commit_line)
-        .map(|commit| CommitEntry {
-            id: format!("git-{}-{}", project.id, commit.hash),
-            proj_id: project.id.clone(),
-            hash: commit.hash,
-            msg: commit.msg,
-            author: commit.author,
-            branch: repo.branch.clone(),
-            date: commit.date,
-            source: "git".to_string(),
+        .map(|commit| {
+            let url = if repo_url.is_empty() {
+                String::new()
+            } else {
+                format!("{repo_url}/commit/{}", commit.hash)
+            };
+            CommitEntry {
+                id: format!("git-{}-{}", project.id, commit.hash),
+                proj_id: project.id.clone(),
+                hash: commit.hash,
+                msg: commit.msg,
+                author: commit.author,
+                branch: repo.branch.clone(),
+                date: commit.date,
+                source: "git".to_string(),
+                url,
+            }
         })
         .collect()
 }
@@ -392,7 +458,12 @@ fn sync_workspace(app: AppHandle) -> Result<Value, String> {
     for project in projects.iter_mut().filter(|project| project.r#type == "local") {
         if let Some(path) = project_path(project) {
             project.git = Some(inspect_repo(&path));
-            synced_commits.extend(git_commits(project, 50));
+            if project.repo_url.as_deref().unwrap_or("").is_empty() {
+                if let Some(remote_url) = project.git.as_ref().map(|git| git.remote_url.clone()).filter(|url| !url.is_empty()) {
+                    project.repo_url = Some(remote_url);
+                }
+            }
+            synced_commits.extend(git_commits(project, 0));
         }
     }
     let manual_commits: Vec<Value> = state

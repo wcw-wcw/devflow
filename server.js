@@ -75,8 +75,9 @@ function expandHome(input = '') {
 }
 
 function projectPath(project) {
-  if (!project || project.type !== 'local' || !project.url) return '';
-  return path.resolve(expandHome(project.url));
+  const repoPath = project?.localPath || (project?.type === 'local' ? project?.url : '');
+  if (!repoPath) return '';
+  return path.resolve(expandHome(repoPath));
 }
 
 function resolveInside(root, rel = '') {
@@ -88,14 +89,26 @@ function resolveInside(root, rel = '') {
 
 function runGit(cwd, args) {
   return new Promise((resolve) => {
-    execFile('git', ['-C', cwd, ...args], { timeout: 8000, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('git', ['-C', cwd, ...args], { timeout: 15000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
       resolve({ ok: !error, stdout: stdout.trim(), stderr: stderr.trim() });
     });
   });
 }
 
+function cleanGithubUrl(url = '') {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('git@github.com:')) return `https://github.com/${raw.slice('git@github.com:'.length).replace(/\.git$/, '')}`;
+  if (raw.startsWith('https://github.com/') || raw.startsWith('http://github.com/')) return raw.replace(/^http:/, 'https:').replace(/\.git$/, '').replace(/\/$/, '');
+  return raw;
+}
+
+function projectRepoUrl(project, repoInfo) {
+  return cleanGithubUrl(project?.repoUrl || (project?.type === 'github' ? project?.url : '') || repoInfo?.remoteUrl || '');
+}
+
 async function inspectRepo(repoPath) {
-  const info = { path: repoPath, exists: false, isGit: false, branch: '', dirty: 0, ahead: 0, behind: 0, lastCommit: null };
+  const info = { path: repoPath, exists: false, isGit: false, branch: '', dirty: 0, ahead: 0, behind: 0, remoteUrl: '', lastCommit: null };
   try {
     const s = await stat(repoPath);
     info.exists = s.isDirectory();
@@ -109,6 +122,8 @@ async function inspectRepo(repoPath) {
 
   const branch = await runGit(repoPath, ['branch', '--show-current']);
   info.branch = branch.stdout || 'detached';
+  const remote = await runGit(repoPath, ['remote', 'get-url', 'origin']);
+  info.remoteUrl = cleanGithubUrl(remote.stdout || '');
 
   const status = await runGit(repoPath, ['status', '--porcelain=v1', '--branch']);
   const lines = status.stdout.split('\n').filter(Boolean);
@@ -119,7 +134,7 @@ async function inspectRepo(repoPath) {
   info.ahead = ahead ? Number(ahead[1]) : 0;
   info.behind = behind ? Number(behind[1]) : 0;
 
-  const last = await runGit(repoPath, ['log', '-1', '--format=%h%x1f%s%x1f%an%x1f%ct']);
+  const last = await runGit(repoPath, ['log', '-1', '--format=%H%x1f%s%x1f%an%x1f%ct']);
   if (last.ok && last.stdout) {
     const [hash, msg, author, unix] = last.stdout.split('\x1f');
     info.lastCommit = { hash, msg, author, date: Number(unix) * 1000 };
@@ -127,12 +142,15 @@ async function inspectRepo(repoPath) {
   return info;
 }
 
-async function gitCommits(project, limit = 50) {
+async function gitCommits(project, limit = 0) {
   const repoPath = projectPath(project);
   const repo = await inspectRepo(repoPath);
   if (!repo.isGit) return [];
-  const log = await runGit(repoPath, ['log', `-${limit}`, '--format=%h%x1f%s%x1f%an%x1f%ct']);
+  const args = ['log', '--format=%H%x1f%s%x1f%an%x1f%ct'];
+  if (limit > 0) args.splice(1, 0, `-${limit}`);
+  const log = await runGit(repoPath, args);
   if (!log.ok || !log.stdout) return [];
+  const repoUrl = projectRepoUrl(project, repo);
   return log.stdout.split('\n').filter(Boolean).map((line) => {
     const [hash, msg, author, unix] = line.split('\x1f');
     return {
@@ -143,7 +161,8 @@ async function gitCommits(project, limit = 50) {
       author,
       branch: repo.branch,
       date: Number(unix) * 1000,
-      source: 'git'
+      source: 'git',
+      url: repoUrl && hash ? `${repoUrl}/commit/${hash}` : ''
     };
   });
 }
@@ -212,8 +231,9 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/sync') {
     const state = await loadState();
     const gitCommitsByProject = [];
-    for (const project of state.projects.filter((p) => p.type === 'local' && p.url)) {
+    for (const project of state.projects.filter((p) => projectPath(p))) {
       project.git = await inspectRepo(projectPath(project));
+      if (!project.repoUrl && project.git.remoteUrl) project.repoUrl = project.git.remoteUrl;
       gitCommitsByProject.push(...await gitCommits(project));
     }
     state.commits = [...gitCommitsByProject, ...state.commits.filter((commit) => commit.source !== 'git')];

@@ -78,6 +78,8 @@ let selectedNoteId = null;
 let taskFilter = 'all';
 let commitFilter = 'all';
 let selectedColor = COLORS[0];
+let selectedProjectId = null;
+let editingProjectId = null;
 let noteAutoSave = null;
 let serverBacked = false;
 let fileContentCache = {};
@@ -186,8 +188,44 @@ function fmtDate(ts) {
 
 function randHash() { return Math.random().toString(16).slice(2, 9); }
 
+function shortHash(hash = '') { return String(hash).slice(0, 7); }
+
+function projectLocalPath(project) {
+  if (!project) return '';
+  return project.localPath || (project.type === 'local' ? project.url : '');
+}
+
+function projectRepoUrl(project) {
+  if (!project) return '';
+  return project.repoUrl || (project.type === 'github' ? project.url : '') || '';
+}
+
+function cleanGithubUrl(url = '') {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (raw.startsWith('git@github.com:')) return `https://github.com/${raw.slice('git@github.com:'.length).replace(/\.git$/, '')}`;
+  if (raw.startsWith('https://github.com/') || raw.startsWith('http://github.com/')) return raw.replace(/^http:/, 'https:').replace(/\.git$/, '').replace(/\/$/, '');
+  return raw;
+}
+
+function githubCommitUrl(project, hash) {
+  const repoUrl = cleanGithubUrl(projectRepoUrl(project));
+  return repoUrl && /github\.com\/[^/]+\/[^/]+/.test(repoUrl) && hash ? `${repoUrl}/commit/${hash}` : '';
+}
+
+function commitUrl(commit) {
+  return commit.url || githubCommitUrl(proj(commit.projId), commit.hash);
+}
+
+function openExternal(url) {
+  const safe = String(url || '').trim();
+  if (!/^https?:\/\//i.test(safe)) return;
+  window.open(safe, '_blank', 'noopener,noreferrer');
+}
+
 // MODALS
 function openModal(id) {
+  if (id === 'modal-project') prepareProjectModal();
   if (id === 'modal-commit') populateCommitModal();
   document.getElementById(id).classList.add('open');
 }
@@ -198,14 +236,15 @@ function bgClose(e, id) { if (e.target.classList.contains('modal-bg')) closeModa
 function showPanel(name) {
   document.querySelectorAll('.panel, .panel-fill').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+  document.querySelectorAll('.proj-sidebar-item').forEach(i => i.classList.remove('active'));
   const el = document.getElementById('panel-' + name);
   if (el) el.classList.add('active');
   const nav = document.getElementById('nav-' + name);
   if (nav) nav.classList.add('active');
   currentPanel = name;
-  const labels = { overview:'Overview', agenda:'Agenda', notes:'Notes', commits:'Commits', files:'Files', ai:'AI Assistant', settings:'Settings' };
+  const labels = { overview:'Overview', project:'Project', agenda:'Agenda', notes:'Notes', commits:'Commits', files:'Files', ai:'AI Assistant', settings:'Settings' };
   document.getElementById('topbar-title').textContent = labels[name] || name;
-  const actions = { overview:['ti-refresh','Refresh'], agenda:['ti-plus','Add task'], notes:['ti-plus','New note'], commits:['ti-git-commit','Log commit'], files:['ti-clipboard','Paste code'], ai:['ti-brain','Ask AI'], settings:['ti-device-floppy','Save'] };
+  const actions = { overview:['ti-refresh','Refresh'], project:['ti-refresh','Refresh'], agenda:['ti-plus','Add task'], notes:['ti-plus','New note'], commits:['ti-git-commit','Log commit'], files:['ti-clipboard','Paste code'], ai:['ti-brain','Ask AI'], settings:['ti-device-floppy','Save'] };
   const [icon, label] = actions[name] || ['ti-refresh','Refresh'];
   document.getElementById('topbar-action-btn').innerHTML = `<i class="ti ${icon}"></i> ${label}`;
   if (!db.settings) db.settings = {};
@@ -213,6 +252,7 @@ function showPanel(name) {
   save();
   updateBadges();
   if (name === 'overview') renderOverview();
+  if (name === 'project') renderProjectDetail();
   if (name === 'agenda') { renderAgenda(); populateSelects(); }
   if (name === 'notes') { renderNotesSidebar(); populateSelects(); }
   if (name === 'commits') { renderCommits(); populateSelects(); }
@@ -231,6 +271,11 @@ function topbarAction() {
   else refreshWorkspace();
 }
 
+function showProject(id) {
+  selectedProjectId = id;
+  showPanel('project');
+}
+
 function updateBadges() {
   const open = db.tasks.filter(t => !t.done).length;
   document.getElementById('badge-overview').textContent = db.projects.length;
@@ -238,7 +283,8 @@ function updateBadges() {
   document.getElementById('badge-notes').textContent = db.notes.length;
   document.getElementById('badge-commits').textContent = db.commits.length;
   document.getElementById('badge-files').textContent = db.projects.length;
-  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: 'Ollama', settings: 'local' }[currentPanel] || '';
+  const selected = proj(selectedProjectId);
+  document.getElementById('topbar-badge').textContent = { overview: db.projects.length + ' projects', project: selected?.name || 'project', agenda: open + ' open', notes: db.notes.length + ' notes', commits: db.commits.length + ' entries', files: db.projects.length + ' repos', ai: 'Ollama', settings: 'local' }[currentPanel] || '';
 }
 
 async function refreshWorkspace() {
@@ -250,6 +296,7 @@ async function refreshWorkspace() {
     setRuntimeStatus('local runtime', true);
     renderSidebar();
     if (currentPanel === 'overview') renderOverview();
+    if (currentPanel === 'project') renderProjectDetail();
     if (currentPanel === 'commits') renderCommits();
     if (currentPanel === 'files') renderFileTree();
   } catch(e) {
@@ -261,10 +308,10 @@ async function refreshWorkspace() {
 function renderSidebar() {
   const el = document.getElementById('proj-list');
   el.innerHTML = db.projects.map(p => `
-    <div class="proj-sidebar-item" data-action="show-panel" data-panel="overview">
+    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
       <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${esc(p.name)}</span>
-      <span class="tag tag-${p.type==='github'?'blue':p.type==='local'?'green':'gray'}" style="font-size:9px;padding:1px 5px">${esc(p.type)}</span>
+      <span class="tag tag-${projectLocalPath(p)?'green':projectRepoUrl(p)?'blue':'gray'}" style="font-size:9px;padding:1px 5px">${projectLocalPath(p) ? 'local' : projectRepoUrl(p) ? 'github' : esc(p.type || 'manual')}</span>
     </div>
   `).join('');
 
@@ -316,29 +363,63 @@ function pickColor(el, color) {
   el.classList.add('active');
 }
 
+function prepareProjectModal(projectId = null) {
+  editingProjectId = projectId;
+  const p = projectId ? proj(projectId) : null;
+  document.getElementById('project-modal-title').innerHTML = `<i class="ti ti-git-branch"></i> ${p ? 'Project settings' : 'Add project'}`;
+  document.getElementById('project-save-label').textContent = p ? 'Save changes' : 'Add project';
+  document.getElementById('pf-name').value = p?.name || '';
+  document.getElementById('pf-type').value = p?.type || 'local';
+  document.getElementById('pf-url').value = projectLocalPath(p) || (!p || p.type === 'local' ? '' : '');
+  document.getElementById('pf-repo-url').value = projectRepoUrl(p);
+  document.getElementById('pf-deploy-url').value = p?.deployUrl || '';
+  document.getElementById('pf-desc').value = p?.desc || '';
+  document.getElementById('pf-stack').value = p?.stack || '';
+  selectedColor = p?.color || COLORS[0];
+  renderSidebar();
+}
+
+function openProjectSettings(id) {
+  prepareProjectModal(id);
+  document.getElementById('modal-project').classList.add('open');
+}
+
 // PROJECT
 function saveProject() {
   const name = document.getElementById('pf-name').value.trim();
   if (!name) { document.getElementById('pf-name').focus(); return; }
-  const p = {
-    id: 'p' + Date.now(),
+  const type = document.getElementById('pf-type').value;
+  const localPath = document.getElementById('pf-url').value.trim();
+  const repoUrl = cleanGithubUrl(document.getElementById('pf-repo-url').value.trim());
+  const projectData = {
     name,
-    type: document.getElementById('pf-type').value,
-    url: document.getElementById('pf-url').value.trim(),
+    type,
+    url: localPath || (type === 'github' ? repoUrl : ''),
+    localPath,
+    repoUrl,
+    deployUrl: document.getElementById('pf-deploy-url').value.trim(),
     desc: document.getElementById('pf-desc').value.trim(),
     stack: document.getElementById('pf-stack').value.trim(),
-    color: selectedColor,
-    created: Date.now()
+    color: selectedColor
   };
-  db.projects.push(p);
+  let p = editingProjectId ? proj(editingProjectId) : null;
+  if (p) {
+    Object.assign(p, projectData);
+  } else {
+    p = { id: 'p' + Date.now(), ...projectData, created: Date.now() };
+    db.projects.push(p);
+  }
   if (!db.files) db.files = {};
-  db.files[p.id] = { 'README.md': { type:'file', content: `# ${name}\n\n${p.desc || 'Add a description.'}` } };
+  if (!db.files[p.id]) db.files[p.id] = { 'README.md': { type:'file', content: `# ${name}\n\n${p.desc || 'Add a description.'}` } };
   save();
   closeModal('modal-project');
-  ['pf-name','pf-url','pf-desc','pf-stack'].forEach(id => document.getElementById(id).value = '');
+  ['pf-name','pf-url','pf-repo-url','pf-deploy-url','pf-desc','pf-stack'].forEach(id => document.getElementById(id).value = '');
+  editingProjectId = null;
+  selectedProjectId = p.id;
   renderSidebar();
   renderOverview();
-  if (serverBacked && p.type === 'local' && p.url) setTimeout(refreshWorkspace, 150);
+  showPanel('project');
+  if (serverBacked && projectLocalPath(p)) setTimeout(refreshWorkspace, 150);
 }
 
 async function inspectProjectPath() {
@@ -351,6 +432,7 @@ async function inspectProjectPath() {
     document.getElementById('pf-type').value = 'local';
     if (!document.getElementById('pf-name').value.trim()) document.getElementById('pf-name').value = info.name || '';
     if (!document.getElementById('pf-stack').value.trim()) document.getElementById('pf-stack').value = info.stack || '';
+    if (!document.getElementById('pf-repo-url').value.trim() && info.git?.remoteUrl) document.getElementById('pf-repo-url').value = cleanGithubUrl(info.git.remoteUrl);
     if (!document.getElementById('pf-desc').value.trim()) {
       document.getElementById('pf-desc').value = info.git?.isGit ? `Git repo on ${info.git.branch || 'current branch'}` : 'Local project folder';
     }
@@ -386,12 +468,27 @@ function deleteProject(id) {
 
 async function openProject(id, target) {
   const p = proj(id);
-  if (!p?.url) return;
+  const localPath = projectLocalPath(p);
+  if (!localPath) return;
   try {
-    await api('/api/projects/open', { method:'POST', body: JSON.stringify({ path:p.url, target }) });
+    await api('/api/projects/open', { method:'POST', body: JSON.stringify({ path:localPath, target }) });
   } catch(e) {
     setRuntimeStatus(e.message || 'open failed', false);
   }
+}
+
+function projectActions(p, compact = false) {
+  const localPath = projectLocalPath(p);
+  const repoUrl = projectRepoUrl(p);
+  const deployUrl = p?.deployUrl || '';
+  const size = compact ? 'btn-sm' : '';
+  return `
+    ${repoUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(repoUrl)}" title="Open GitHub repository"><i class="ti ti-brand-github"></i>${compact ? '' : ' GitHub'}</button>` : ''}
+    ${deployUrl ? `<button class="btn ${size}" data-action="open-external" data-url="${esc(deployUrl)}" title="Open deployment"><i class="ti ti-world"></i>${compact ? '' : ' Deployment'}</button>` : ''}
+    ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i>${compact ? '' : ' Terminal'}</button>` : ''}
+    ${localPath ? `<button class="btn ${size}" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open in Finder"><i class="ti ti-folder"></i>${compact ? '' : ' Finder'}</button>` : ''}
+    <button class="btn ${size}" data-action="open-project-settings" data-id="${esc(p.id)}" title="Project settings"><i class="ti ti-settings"></i>${compact ? '' : ' Settings'}</button>
+  `;
 }
 
 // OVERVIEW
@@ -410,9 +507,9 @@ function renderOverview() {
     const typeColors = {feat:'green',fix:'red',refactor:'purple',style:'blue',docs:'amber',chore:'gray'};
     const tc = typeColors[type] || 'gray';
     return `<div class="commit-item">
-      <code class="commit-hash">${esc(c.hash)}</code>
+      <code class="commit-hash">${esc(shortHash(c.hash))}</code>
       <div style="flex:1">
-        <div class="commit-msg">${esc(c.msg)}</div>
+        <div class="commit-msg">${commitUrl(c) ? `<a class="link-plain" href="${esc(commitUrl(c))}" target="_blank" rel="noreferrer">${esc(c.msg)}</a>` : esc(c.msg)}</div>
         <div class="commit-meta">${p ? `<span style="color:${safeColor(p.color)}">${esc(p.name)}</span> · ` : ''}${c.branch ? esc(c.branch) + ' · ' : ''}${timeAgo(c.date)}</div>
       </div>
     </div>`;
@@ -444,11 +541,13 @@ function renderOverview() {
       p.git.ahead ? `<span class="tag tag-blue" style="font-size:10px">ahead ${p.git.ahead}</span>` : '',
       p.git.behind ? `<span class="tag tag-red" style="font-size:10px">behind ${p.git.behind}</span>` : ''
     ].join('') : '';
-    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:var(--radius-md);cursor:default;margin-bottom:2px;border-bottom:0.5px solid var(--border-light)">
+    const localPath = projectLocalPath(p);
+    const kind = localPath ? 'local' : projectRepoUrl(p) ? 'github' : (p.type || 'manual');
+    return `<div class="project-row" data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)};width:10px;height:10px;flex-shrink:0"></span>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;margin-bottom:2px">${esc(p.name)}</div>
-        <div style="font-size:11px;color:var(--text-tertiary)">${esc(p.desc || p.url || '')}</div>
+        <div style="font-size:11px;color:var(--text-tertiary)">${esc(p.desc || localPath || projectRepoUrl(p) || '')}</div>
         ${stack || gitBits ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">${stack} ${gitBits}</div>` : ''}
       </div>
       <div style="display:flex;gap:14px;font-size:12px;color:var(--text-secondary);text-align:center">
@@ -457,16 +556,93 @@ function renderOverview() {
         <div><div style="font-size:16px;font-weight:600">${noteCount}</div><div style="font-size:10px;color:var(--text-tertiary)">notes</div></div>
       </div>
       <div style="text-align:right;min-width:80px">
-        <span class="tag tag-${typeMap[p.type]||'gray'}">${esc(p.type)}</span>
+        <span class="tag tag-${typeMap[kind]||'gray'}">${esc(kind)}</span>
         <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px">${last ? timeAgo(last.date) : 'No commits'}</div>
       </div>
-      ${p.type === 'local' && p.url ? `<div class="row" style="gap:4px">
-        <button class="btn btn-sm" data-action="open-project-path" data-id="${esc(p.id)}" data-target="finder" title="Open in Finder"><i class="ti ti-folder"></i></button>
-        <button class="btn btn-sm" data-action="open-project-path" data-id="${esc(p.id)}" data-target="terminal" title="Open in Terminal"><i class="ti ti-terminal-2"></i></button>
-      </div>` : ''}
+      <div class="project-row-actions">${projectActions(p, true)}</div>
       <button class="btn btn-sm btn-danger" data-action="delete-project" data-id="${esc(p.id)}" title="Delete project"><i class="ti ti-trash"></i></button>
     </div>`;
   }).join('') : `<div class="empty-state"><i class="ti ti-folder-plus"></i><p>No projects yet</p><div class="sub">Add your first project to get started</div></div>`;
+}
+
+function renderProjectDetail() {
+  let p = proj(selectedProjectId);
+  if (!p && db.projects.length) {
+    selectedProjectId = db.projects[0].id;
+    p = db.projects[0];
+  }
+  const el = document.getElementById('project-detail');
+  if (!el) return;
+  if (!p) {
+    el.innerHTML = '<div class="empty-state"><i class="ti ti-folder-plus"></i><p>No project selected</p><div class="sub">Add or select a project to see its workspace links.</div></div>';
+    updateBadges();
+    return;
+  }
+  document.getElementById('topbar-title').textContent = p.name;
+  const localPath = projectLocalPath(p);
+  const repoUrl = projectRepoUrl(p);
+  const projectCommits = [...db.commits].filter(c => c.projId === p.id).sort((a,b) => b.date - a.date);
+  const projectTasks = db.tasks.filter(t => t.projId === p.id && !t.done);
+  const projectNotes = db.notes.filter(n => n.projId === p.id);
+  const last = projectCommits[0];
+  el.innerHTML = `
+    <div class="project-hero">
+      <div class="project-identity">
+        <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
+        <div>
+          <h1>${esc(p.name)}</h1>
+          <p>${esc(p.desc || localPath || repoUrl || 'Project workspace')}</p>
+        </div>
+      </div>
+      <div class="project-actions">${projectActions(p)}</div>
+    </div>
+    <div class="grid4 mb16">
+      <div class="stat-card"><div class="stat-label">Open tasks</div><div class="stat-val">${projectTasks.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Commits</div><div class="stat-val">${projectCommits.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Notes</div><div class="stat-val">${projectNotes.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Last commit</div><div class="stat-val stat-val-small">${last ? esc(timeAgo(last.date)) : 'None'}</div></div>
+    </div>
+    <div class="grid2 mb16">
+      <div class="card">
+        <div class="card-header"><span class="card-title"><i class="ti ti-link"></i> Quick links</span></div>
+        <div class="info-list">
+          <div><span>Local path</span><strong>${localPath ? esc(localPath) : 'Not attached'}</strong></div>
+          <div><span>GitHub repo</span><strong>${repoUrl ? `<a href="${esc(repoUrl)}" target="_blank" rel="noreferrer">${esc(repoUrl)}</a>` : 'Not attached'}</strong></div>
+          <div><span>Deployment</span><strong>${p.deployUrl ? `<a href="${esc(p.deployUrl)}" target="_blank" rel="noreferrer">${esc(p.deployUrl)}</a>` : 'Not attached'}</strong></div>
+          <div><span>Stack</span><strong>${esc(p.stack || 'Not set')}</strong></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title"><i class="ti ti-git-branch"></i> Git status</span>
+          <button class="btn btn-sm" data-action="topbar-action"><i class="ti ti-refresh"></i> Sync</button>
+        </div>
+        ${p.git?.isGit ? `<div class="info-list">
+          <div><span>Branch</span><strong>${esc(p.git.branch || 'detached')}</strong></div>
+          <div><span>Working tree</span><strong>${p.git.dirty ? esc(p.git.dirty + ' changed') : 'Clean'}</strong></div>
+          <div><span>Ahead / behind</span><strong>${p.git.ahead || 0} / ${p.git.behind || 0}</strong></div>
+          <div><span>Remote</span><strong>${p.git.remoteUrl ? esc(cleanGithubUrl(p.git.remoteUrl)) : 'Not found'}</strong></div>
+        </div>` : `<div class="empty-state" style="padding:20px"><i class="ti ti-git-branch"></i><p>${localPath ? 'No git repo found' : 'Attach a local repo to sync commits'}</p></div>`}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title"><i class="ti ti-git-commit"></i> Recent commits</span>
+        <button class="btn btn-sm" data-action="show-panel" data-panel="commits">View all <i class="ti ti-arrow-right"></i></button>
+      </div>
+      <div class="commit-list">
+        ${projectCommits.length ? projectCommits.slice(0, 12).map(c => `<div class="commit-item">
+          <code class="commit-hash">${esc(shortHash(c.hash))}</code>
+          <div style="flex:1">
+            <div class="commit-msg">${commitUrl(c) ? `<a class="link-plain" href="${esc(commitUrl(c))}" target="_blank" rel="noreferrer">${esc(c.msg)}</a>` : esc(c.msg)}</div>
+            <div class="commit-meta">${c.author ? esc(c.author)+' · ' : ''}${c.branch ? esc(c.branch)+' · ' : ''}${timeAgo(c.date)}${c.source === 'git' ? ' · synced' : ''}</div>
+          </div>
+        </div>`).join('') : '<div class="empty-state" style="padding:20px"><i class="ti ti-git-commit"></i><p>No commits synced yet</p></div>'}
+      </div>
+    </div>
+  `;
+  renderSidebar();
+  updateBadges();
 }
 
 // AGENDA
@@ -660,15 +836,15 @@ function renderCommits() {
           const type = c.msg.split(':')[0];
           const tc = typeColors[type] || 'gray';
           return `<div class="commit-item">
-            <code class="commit-hash">${esc(c.hash)}</code>
+            <code class="commit-hash">${esc(shortHash(c.hash))}</code>
             <div style="flex:1">
               <div class="commit-msg">
                 ${type && c.msg.includes(':') ? `<span class="tag tag-${tc}" style="font-size:10px;margin-right:4px">${esc(type)}</span>` : ''}
-                ${esc(c.msg.includes(':') ? c.msg.slice(c.msg.indexOf(':')+1).trim() : c.msg)}
+                ${commitUrl(c) ? `<a class="link-plain" href="${esc(commitUrl(c))}" target="_blank" rel="noreferrer">${esc(c.msg.includes(':') ? c.msg.slice(c.msg.indexOf(':')+1).trim() : c.msg)}</a>` : esc(c.msg.includes(':') ? c.msg.slice(c.msg.indexOf(':')+1).trim() : c.msg)}
               </div>
-              <div class="commit-meta">${c.author ? esc(c.author)+' · ' : ''}${c.branch ? esc(c.branch)+' · ' : ''}${timeAgo(c.date)}</div>
+              <div class="commit-meta">${c.author ? esc(c.author)+' · ' : ''}${c.branch ? esc(c.branch)+' · ' : ''}${timeAgo(c.date)}${c.source === 'git' ? ' · synced' : ''}</div>
             </div>
-            <button data-action="delete-commit" data-id="${esc(c.id)}" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>
+            ${c.source === 'git' ? '' : `<button data-action="delete-commit" data-id="${esc(c.id)}" class="btn btn-sm btn-danger" title="Delete"><i class="ti ti-trash"></i></button>`}
           </div>`;
         }).join('')}
       </div>
@@ -730,7 +906,7 @@ async function renderFileTree() {
   const el = document.getElementById('file-tree');
   const p = proj(pid);
   if (!pid) { el.innerHTML = '<div style="color:var(--text-tertiary);padding:12px;font-size:12px">Select a project to browse files</div>'; return; }
-  if (serverBacked && p?.type === 'local' && p.url) {
+  if (serverBacked && projectLocalPath(p)) {
     el.innerHTML = '<div style="color:var(--text-tertiary);padding:12px;font-size:12px">Loading files...</div>';
     try {
       const data = await api(`/api/projects/${encodeURIComponent(pid)}/tree`);
@@ -878,7 +1054,7 @@ async function sendAI() {
   const ctx = `You are DevFlow, a dev assistant embedded in a developer dashboard.
 
 WORKSPACE CONTEXT:
-Projects (${db.projects.length}): ${db.projects.map(p => `${p.name} [${p.type}${p.stack?' | '+p.stack:''}${p.desc?' | '+p.desc:''}]`).join('; ')}
+Projects (${db.projects.length}): ${db.projects.map(p => `${p.name} [${projectLocalPath(p) ? 'local' : p.type}${p.stack?' | '+p.stack:''}${p.desc?' | '+p.desc:''}${projectRepoUrl(p)?' | repo '+projectRepoUrl(p):''}${p.deployUrl?' | deployed '+p.deployUrl:''}]`).join('; ')}
 
 Open tasks (${db.tasks.filter(t=>!t.done).length}):
 ${db.tasks.filter(t=>!t.done).map(t => { const p=proj(t.projId); return `- ${t.text}${p?' ['+p.name+']':''}${t.priority==='high?' }` }).join('\n') || 'None'}
@@ -976,6 +1152,7 @@ function bindEvents() {
     if (!target) return;
     const action = target.dataset.action;
     if (action === 'show-panel') showPanel(target.dataset.panel);
+    else if (action === 'show-project') showProject(target.dataset.id);
     else if (action === 'open-modal') openModal(target.dataset.modal);
     else if (action === 'close-modal') closeModal(target.dataset.modal);
     else if (action === 'modal-bg-close') bgClose(event, target.dataset.modal);
@@ -999,6 +1176,8 @@ function bindEvents() {
     else if (action === 'save-commit') saveCommit();
     else if (action === 'choose-project-folder') chooseProjectFolder();
     else if (action === 'open-project-path') openProject(target.dataset.id, target.dataset.target);
+    else if (action === 'open-project-settings') openProjectSettings(target.dataset.id);
+    else if (action === 'open-external') openExternal(target.dataset.url);
     else if (action === 'save-settings') saveSettings();
     else if (action === 'test-ollama') testOllama();
     else if (action === 'refresh-ollama-models') refreshOllamaModels();
