@@ -36,14 +36,23 @@ struct Project {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct RepoInfo {
+    #[serde(default)]
     path: String,
+    #[serde(default)]
     exists: bool,
+    #[serde(default)]
     is_git: bool,
+    #[serde(default)]
     branch: String,
+    #[serde(default)]
     dirty: usize,
+    #[serde(default)]
     ahead: usize,
+    #[serde(default)]
     behind: usize,
+    #[serde(default)]
     remote_url: String,
+    #[serde(default)]
     last_commit: Option<CommitInfo>,
 }
 
@@ -455,7 +464,7 @@ fn sync_workspace(app: AppHandle) -> Result<Value, String> {
     let mut state = read_state(&app)?;
     let mut projects = projects_from_state(&state)?;
     let mut synced_commits = Vec::new();
-    for project in projects.iter_mut().filter(|project| project.r#type == "local") {
+    for project in projects.iter_mut().filter(|project| project_path(project).is_some()) {
         if let Some(path) = project_path(project) {
             project.git = Some(inspect_repo(&path));
             if project.repo_url.as_deref().unwrap_or("").is_empty() {
