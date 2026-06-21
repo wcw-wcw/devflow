@@ -82,6 +82,7 @@ let selectedProjectId = null;
 let editingProjectId = null;
 let editingFolderId = null;
 let draggedProjectId = null;
+let draggedFolderId = null;
 let noteAutoSave = null;
 let serverBacked = false;
 let fileContentCache = {};
@@ -164,6 +165,30 @@ function proj(id) { return db.projects.find(p => p.id === id); }
 
 function ensureProjectFolders() {
   if (!Array.isArray(db.projectFolders)) db.projectFolders = [];
+}
+
+function ensureSidebarOrder() {
+  ensureProjectFolders();
+  const validFolders = new Set(db.projectFolders.map(f => f.id));
+  const unfiledProjects = new Set(db.projects.filter(p => !p.folderId || !validFolders.has(p.folderId)).map(p => p.id));
+  db.projects.forEach(p => { if (p.folderId && !validFolders.has(p.folderId)) delete p.folderId; });
+  const current = Array.isArray(db.sidebarOrder) ? db.sidebarOrder : [];
+  const used = new Set();
+  const order = [];
+  current.forEach(item => {
+    if (!item || used.has(`${item.type}:${item.id}`)) return;
+    if (item.type === 'folder' && validFolders.has(item.id)) {
+      order.push({ type:'folder', id:item.id });
+      used.add(`folder:${item.id}`);
+    }
+    if (item.type === 'project' && unfiledProjects.has(item.id)) {
+      order.push({ type:'project', id:item.id });
+      used.add(`project:${item.id}`);
+    }
+  });
+  db.projects.filter(p => unfiledProjects.has(p.id) && !used.has(`project:${p.id}`)).forEach(p => order.push({ type:'project', id:p.id }));
+  db.projectFolders.filter(f => !used.has(`folder:${f.id}`)).forEach(f => order.push({ type:'folder', id:f.id }));
+  db.sidebarOrder = order;
 }
 
 function esc(value) {
@@ -323,10 +348,10 @@ async function refreshWorkspace() {
 
 // SIDEBAR
 function renderSidebar() {
-  ensureProjectFolders();
+  ensureSidebarOrder();
   const el = document.getElementById('proj-list');
-  const projectItem = (p) => `
-    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" draggable="true" data-drag-project-id="${esc(p.id)}" data-drop-project-id="${esc(p.id)}" data-action="show-project" data-id="${esc(p.id)}">
+  const projectItem = (p, nested = false) => `
+    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" draggable="true" data-drag-project-id="${esc(p.id)}" data-drop-project-id="${esc(p.id)}" ${nested ? '' : `data-drop-sidebar-type="project" data-drop-sidebar-id="${esc(p.id)}"`} data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
       <span class="proj-sidebar-name">${esc(p.name)}</span>
       <span class="tag tag-${projectLocalPath(p)?'green':projectRepoUrl(p)?'blue':'gray'}" style="font-size:9px;padding:1px 5px">${projectLocalPath(p) ? 'local' : projectRepoUrl(p) ? 'github' : esc(p.type || 'manual')}</span>
@@ -334,12 +359,12 @@ function renderSidebar() {
         <button class="sidebar-icon-btn sidebar-icon-btn-wide" data-action="open-project-files" data-id="${esc(p.id)}" title="Files"><i class="ti ti-folder"></i><span>Files</span></button>
       </span>
     </div>`;
-  const folders = db.projectFolders.map(folder => {
+  const folderItem = (folder) => {
     const children = db.projects.filter(p => p.folderId === folder.id);
     const isEditing = editingFolderId === folder.id;
     const collapsed = Boolean(folder.collapsed);
     return `
-      <div class="sidebar-folder" data-drop-folder-id="${esc(folder.id)}">
+      <div class="sidebar-folder" draggable="${isEditing ? 'false' : 'true'}" data-drag-folder-id="${esc(folder.id)}" data-drop-sidebar-type="folder" data-drop-sidebar-id="${esc(folder.id)}" data-drop-folder-id="${esc(folder.id)}">
         <div class="sidebar-folder-head ${collapsed ? 'collapsed' : ''}">
           <button class="sidebar-folder-toggle" data-action="toggle-folder" data-id="${esc(folder.id)}" title="${collapsed ? 'Expand folder' : 'Collapse folder'}"><i class="ti ${collapsed ? 'ti-chevron-right' : 'ti-chevron-down'}"></i></button>
           <span class="sidebar-folder-title"><i class="ti ti-folder"></i> ${isEditing ? `<input class="sidebar-folder-input" data-folder-name="${esc(folder.id)}" value="${esc(folder.name)}" placeholder="Folder name">` : `<span>${esc(folder.name || 'Untitled folder')}</span>`}</span>
@@ -349,14 +374,18 @@ function renderSidebar() {
             <button class="sidebar-icon-btn" data-action="delete-folder" data-id="${esc(folder.id)}" title="Delete folder"><i class="ti ti-x"></i></button>
           </span>
         </div>
-        <div class="sidebar-folder-body" ${collapsed ? 'hidden' : ''}>${children.map(projectItem).join('') || '<div class="sidebar-folder-empty">Drop projects here</div>'}</div>
+        <div class="sidebar-folder-body" data-drop-folder-id="${esc(folder.id)}" ${collapsed ? 'hidden' : ''}>${children.map(p => projectItem(p, true)).join('') || '<div class="sidebar-folder-empty">Drop projects here</div>'}</div>
       </div>`;
+  };
+  const ordered = db.sidebarOrder.map(item => {
+    if (item.type === 'folder') {
+      const folder = db.projectFolders.find(f => f.id === item.id);
+      return folder ? folderItem(folder) : '';
+    }
+    const p = db.projects.find(project => project.id === item.id && !project.folderId);
+    return p ? projectItem(p, false) : '';
   }).join('');
-  const unfiled = db.projects.filter(p => !p.folderId).map(projectItem).join('');
-  el.innerHTML = `
-    <div class="sidebar-drop-root" data-drop-folder-id="">${unfiled || '<div class="sidebar-folder-empty">No unfiled projects</div>'}</div>
-    ${folders}
-  `;
+  el.innerHTML = `<div class="sidebar-drop-root" data-drop-folder-id="">${ordered || '<div class="sidebar-folder-empty">No projects yet</div>'}</div>`;
 
   // Color picker in modal
   const cp = document.getElementById('color-picker');
@@ -555,9 +584,10 @@ function moveProject(id, direction) {
 }
 
 function newFolder() {
-  ensureProjectFolders();
+  ensureSidebarOrder();
   const folder = { id:'f' + Date.now(), name:'', collapsed:false, created:Date.now() };
   db.projectFolders.push(folder);
+  db.sidebarOrder.push({ type:'folder', id:folder.id });
   editingFolderId = folder.id;
   save();
   renderSidebar();
@@ -610,21 +640,28 @@ function toggleFolder(id) {
 }
 
 function deleteFolder(id) {
-  ensureProjectFolders();
+  ensureSidebarOrder();
   const folder = db.projectFolders.find(f => f.id === id);
   if (!folder) return;
   if (!confirm(`Delete "${folder.name}"? Projects will stay in the sidebar.`)) return;
   db.projectFolders = db.projectFolders.filter(f => f.id !== id);
   db.projects.forEach(p => { if (p.folderId === id) delete p.folderId; });
+  db.sidebarOrder = db.sidebarOrder.filter(item => !(item.type === 'folder' && item.id === id));
+  db.projects.filter(p => !p.folderId).forEach(p => {
+    if (!db.sidebarOrder.some(item => item.type === 'project' && item.id === p.id)) db.sidebarOrder.push({ type:'project', id:p.id });
+  });
   save();
   renderSidebar();
 }
 
 function assignProjectFolder(projectId, folderId) {
+  ensureSidebarOrder();
   const p = proj(projectId);
   if (!p) return;
   if (folderId) p.folderId = folderId;
   else delete p.folderId;
+  db.sidebarOrder = db.sidebarOrder.filter(item => !(item.type === 'project' && item.id === projectId));
+  if (!folderId) db.sidebarOrder.push({ type:'project', id:projectId });
   save();
   renderSidebar();
   if (currentPanel === 'overview') renderOverview();
@@ -632,6 +669,7 @@ function assignProjectFolder(projectId, folderId) {
 
 function dropProjectOnProject(projectId, targetId) {
   if (!projectId || projectId === targetId) return;
+  ensureSidebarOrder();
   const movingIndex = db.projects.findIndex(p => p.id === projectId);
   const target = proj(targetId);
   if (movingIndex < 0 || !target) return;
@@ -640,6 +678,37 @@ function dropProjectOnProject(projectId, targetId) {
   else delete moving.folderId;
   const targetIndex = db.projects.findIndex(p => p.id === targetId);
   db.projects.splice(targetIndex, 0, moving);
+  db.sidebarOrder = db.sidebarOrder.filter(item => !(item.type === 'project' && item.id === projectId));
+  if (!target.folderId) {
+    const sidebarTargetIndex = db.sidebarOrder.findIndex(item => item.type === 'project' && item.id === targetId);
+    db.sidebarOrder.splice(sidebarTargetIndex < 0 ? db.sidebarOrder.length : sidebarTargetIndex, 0, { type:'project', id:projectId });
+  }
+  save();
+  renderSidebar();
+  if (currentPanel === 'overview') renderOverview();
+}
+
+function reorderSidebarItem(type, id, targetType, targetId) {
+  ensureSidebarOrder();
+  if (!type || !id || !targetType || !targetId || (type === targetType && id === targetId)) return;
+  const movingIndex = db.sidebarOrder.findIndex(item => item.type === type && item.id === id);
+  const targetIndex = db.sidebarOrder.findIndex(item => item.type === targetType && item.id === targetId);
+  if (movingIndex < 0 || targetIndex < 0) return;
+  const [moving] = db.sidebarOrder.splice(movingIndex, 1);
+  const insertAt = db.sidebarOrder.findIndex(item => item.type === targetType && item.id === targetId);
+  db.sidebarOrder.splice(insertAt < 0 ? db.sidebarOrder.length : insertAt, 0, moving);
+  save();
+  renderSidebar();
+}
+
+function moveProjectToTopLevel(projectId, targetType = '', targetId = '') {
+  ensureSidebarOrder();
+  const p = proj(projectId);
+  if (!p) return;
+  delete p.folderId;
+  db.sidebarOrder = db.sidebarOrder.filter(item => !(item.type === 'project' && item.id === projectId));
+  const insertAt = targetType && targetId ? db.sidebarOrder.findIndex(item => item.type === targetType && item.id === targetId) : -1;
+  db.sidebarOrder.splice(insertAt < 0 ? db.sidebarOrder.length : insertAt, 0, { type:'project', id:projectId });
   save();
   renderSidebar();
   if (currentPanel === 'overview') renderOverview();
@@ -1470,39 +1539,60 @@ function bindEvents() {
   });
 
   document.addEventListener('dragstart', (event) => {
-    const item = event.target.closest('[data-drag-project-id]');
-    if (!item) return;
-    draggedProjectId = item.dataset.dragProjectId;
+    const projectItem = event.target.closest('[data-drag-project-id]');
+    const folderItem = event.target.closest('[data-drag-folder-id]');
+    if (projectItem && !event.target.closest('button, input')) {
+      draggedProjectId = projectItem.dataset.dragProjectId;
+      draggedFolderId = null;
+      projectItem.classList.add('dragging');
+    } else if (folderItem && !event.target.closest('button, input')) {
+      draggedFolderId = folderItem.dataset.dragFolderId;
+      draggedProjectId = null;
+      folderItem.classList.add('dragging');
+    } else {
+      return;
+    }
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', draggedProjectId);
-    item.classList.add('dragging');
+    event.dataTransfer.setData('text/plain', draggedProjectId || draggedFolderId || '');
   });
 
   document.addEventListener('dragend', () => {
     document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
     draggedProjectId = null;
+    draggedFolderId = null;
   });
 
   document.addEventListener('dragover', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
-    if (!target || !draggedProjectId) return;
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
+    if (!target || (!draggedProjectId && !draggedFolderId)) return;
+    if (draggedFolderId && !target.dataset.dropSidebarType) return;
     event.preventDefault();
     target.classList.add('drop-target');
   });
 
   document.addEventListener('dragleave', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
     if (target) target.classList.remove('drop-target');
   });
 
   document.addEventListener('drop', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id]');
-    if (!target || !draggedProjectId) return;
+    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
+    if (!target || (!draggedProjectId && !draggedFolderId)) return;
     event.preventDefault();
-    if (target.dataset.dropProjectId) dropProjectOnProject(draggedProjectId, target.dataset.dropProjectId);
-    else assignProjectFolder(draggedProjectId, target.dataset.dropFolderId || '');
+    if (draggedFolderId && target.dataset.dropSidebarType) {
+      reorderSidebarItem('folder', draggedFolderId, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
+    } else if (draggedProjectId && target.dataset.dropProjectId) {
+      dropProjectOnProject(draggedProjectId, target.dataset.dropProjectId);
+    } else if (draggedProjectId && target.dataset.dropFolderId !== undefined && target.dataset.dropFolderId) {
+      assignProjectFolder(draggedProjectId, target.dataset.dropFolderId);
+    } else if (draggedProjectId && target.dataset.dropSidebarType) {
+      moveProjectToTopLevel(draggedProjectId, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
+    } else if (draggedProjectId && target.dataset.dropFolderId !== undefined) {
+      moveProjectToTopLevel(draggedProjectId);
+    }
     document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
     draggedProjectId = null;
+    draggedFolderId = null;
   });
 }
 
