@@ -80,6 +80,7 @@ let commitFilter = 'all';
 let selectedColor = COLORS[0];
 let selectedProjectId = null;
 let editingProjectId = null;
+let editingFolderId = null;
 let draggedProjectId = null;
 let noteAutoSave = null;
 let serverBacked = false;
@@ -335,17 +336,20 @@ function renderSidebar() {
     </div>`;
   const folders = db.projectFolders.map(folder => {
     const children = db.projects.filter(p => p.folderId === folder.id);
+    const isEditing = editingFolderId === folder.id;
+    const collapsed = Boolean(folder.collapsed);
     return `
       <div class="sidebar-folder" data-drop-folder-id="${esc(folder.id)}">
-        <div class="sidebar-folder-head">
-          <span><i class="ti ti-folder"></i> ${esc(folder.name)}</span>
+        <div class="sidebar-folder-head ${collapsed ? 'collapsed' : ''}">
+          <button class="sidebar-folder-toggle" data-action="toggle-folder" data-id="${esc(folder.id)}" title="${collapsed ? 'Expand folder' : 'Collapse folder'}"><i class="ti ${collapsed ? 'ti-chevron-right' : 'ti-chevron-down'}"></i></button>
+          <span class="sidebar-folder-title"><i class="ti ti-folder"></i> ${isEditing ? `<input class="sidebar-folder-input" data-folder-name="${esc(folder.id)}" value="${esc(folder.name)}" placeholder="Folder name">` : `<span>${esc(folder.name || 'Untitled folder')}</span>`}</span>
           <span class="sidebar-folder-actions">
             <span class="sidebar-badge">${children.length}</span>
             <button class="sidebar-icon-btn" data-action="rename-folder" data-id="${esc(folder.id)}" title="Rename folder"><i class="ti ti-pencil"></i></button>
             <button class="sidebar-icon-btn" data-action="delete-folder" data-id="${esc(folder.id)}" title="Delete folder"><i class="ti ti-x"></i></button>
           </span>
         </div>
-        <div class="sidebar-folder-body">${children.map(projectItem).join('') || '<div class="sidebar-folder-empty">Drop projects here</div>'}</div>
+        <div class="sidebar-folder-body" ${collapsed ? 'hidden' : ''}>${children.map(projectItem).join('') || '<div class="sidebar-folder-empty">Drop projects here</div>'}</div>
       </div>`;
   }).join('');
   const unfiled = db.projects.filter(p => !p.folderId).map(projectItem).join('');
@@ -552,20 +556,55 @@ function moveProject(id, direction) {
 
 function newFolder() {
   ensureProjectFolders();
-  const name = prompt('Folder name');
-  if (!name?.trim()) return;
-  db.projectFolders.push({ id:'f' + Date.now(), name:name.trim(), created:Date.now() });
+  const folder = { id:'f' + Date.now(), name:'', collapsed:false, created:Date.now() };
+  db.projectFolders.push(folder);
+  editingFolderId = folder.id;
   save();
   renderSidebar();
+  setTimeout(() => {
+    const input = document.querySelector(`[data-folder-name="${folder.id}"]`);
+    input?.focus();
+    input?.select();
+  }, 0);
 }
 
 function renameFolder(id) {
   ensureProjectFolders();
   const folder = db.projectFolders.find(f => f.id === id);
   if (!folder) return;
-  const name = prompt('Folder name', folder.name);
-  if (!name?.trim()) return;
-  folder.name = name.trim();
+  editingFolderId = id;
+  renderSidebar();
+  setTimeout(() => {
+    const input = document.querySelector(`[data-folder-name="${id}"]`);
+    input?.focus();
+    input?.select();
+  }, 0);
+}
+
+function saveFolderName(id, value) {
+  ensureProjectFolders();
+  const folder = db.projectFolders.find(f => f.id === id);
+  if (!folder) return;
+  const name = String(value || '').trim();
+  if (!name) {
+    if (!db.projects.some(p => p.folderId === id)) {
+      db.projectFolders = db.projectFolders.filter(f => f.id !== id);
+    } else {
+      folder.name = 'Untitled folder';
+    }
+  } else {
+    folder.name = name;
+  }
+  editingFolderId = null;
+  save();
+  renderSidebar();
+}
+
+function toggleFolder(id) {
+  ensureProjectFolders();
+  const folder = db.projectFolders.find(f => f.id === id);
+  if (!folder) return;
+  folder.collapsed = !folder.collapsed;
   save();
   renderSidebar();
 }
@@ -1368,6 +1407,7 @@ function bindEvents() {
     else if (action === 'open-project-note') openProjectNote(target.dataset.id);
     else if (action === 'move-project') moveProject(target.dataset.id, target.dataset.direction);
     else if (action === 'new-folder') newFolder();
+    else if (action === 'toggle-folder') toggleFolder(target.dataset.id);
     else if (action === 'rename-folder') renameFolder(target.dataset.id);
     else if (action === 'delete-folder') deleteFolder(target.dataset.id);
     else if (action === 'open-external') openExternal(target.dataset.url);
@@ -1413,6 +1453,20 @@ function bindEvents() {
     const action = event.target.dataset?.keyAction;
     if (action === 'add-task-enter' && event.key === 'Enter') addTask();
     if (action === 'send-ai-enter' && event.key === 'Enter' && !event.shiftKey) sendAI();
+    if (event.target.dataset?.folderName && event.key === 'Enter') {
+      event.preventDefault();
+      saveFolderName(event.target.dataset.folderName, event.target.value);
+    }
+    if (event.target.dataset?.folderName && event.key === 'Escape') {
+      editingFolderId = null;
+      renderSidebar();
+    }
+  });
+
+  document.addEventListener('focusout', (event) => {
+    if (event.target.dataset?.folderName) {
+      saveFolderName(event.target.dataset.folderName, event.target.value);
+    }
   });
 
   document.addEventListener('dragstart', (event) => {
