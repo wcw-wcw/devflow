@@ -83,6 +83,8 @@ let editingProjectId = null;
 let editingFolderId = null;
 let draggedProjectId = null;
 let draggedFolderId = null;
+let sidebarDrag = null;
+let suppressNextSidebarClick = false;
 let noteAutoSave = null;
 let serverBacked = false;
 let fileContentCache = {};
@@ -351,7 +353,7 @@ function renderSidebar() {
   ensureSidebarOrder();
   const el = document.getElementById('proj-list');
   const projectItem = (p, nested = false) => `
-    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" draggable="true" data-drag-project-id="${esc(p.id)}" data-drop-project-id="${esc(p.id)}" ${nested ? '' : `data-drop-sidebar-type="project" data-drop-sidebar-id="${esc(p.id)}"`} data-action="show-project" data-id="${esc(p.id)}">
+    <div class="proj-sidebar-item ${p.id === selectedProjectId && currentPanel === 'project' ? 'active' : ''}" data-drag-project-id="${esc(p.id)}" data-drop-project-id="${esc(p.id)}" ${nested ? '' : `data-drop-sidebar-type="project" data-drop-sidebar-id="${esc(p.id)}"`} data-action="show-project" data-id="${esc(p.id)}">
       <span class="proj-dot" style="background:${safeColor(p.color)}"></span>
       <span class="proj-sidebar-name">${esc(p.name)}</span>
       <span class="tag tag-${projectLocalPath(p)?'green':projectRepoUrl(p)?'blue':'gray'}" style="font-size:9px;padding:1px 5px">${projectLocalPath(p) ? 'local' : projectRepoUrl(p) ? 'github' : esc(p.type || 'manual')}</span>
@@ -364,7 +366,7 @@ function renderSidebar() {
     const isEditing = editingFolderId === folder.id;
     const collapsed = Boolean(folder.collapsed);
     return `
-      <div class="sidebar-folder" draggable="${isEditing ? 'false' : 'true'}" data-drag-folder-id="${esc(folder.id)}" data-drop-sidebar-type="folder" data-drop-sidebar-id="${esc(folder.id)}" data-drop-folder-id="${esc(folder.id)}">
+      <div class="sidebar-folder" data-drag-folder-id="${esc(folder.id)}" data-drop-sidebar-type="folder" data-drop-sidebar-id="${esc(folder.id)}" data-drop-folder-id="${esc(folder.id)}">
         <div class="sidebar-folder-head ${collapsed ? 'collapsed' : ''}">
           <button class="sidebar-folder-toggle" data-action="toggle-folder" data-id="${esc(folder.id)}" title="${collapsed ? 'Expand folder' : 'Collapse folder'}"><i class="ti ${collapsed ? 'ti-chevron-right' : 'ti-chevron-down'}"></i></button>
           <span class="sidebar-folder-title"><i class="ti ti-folder"></i> ${isEditing ? `<input class="sidebar-folder-input" data-folder-name="${esc(folder.id)}" value="${esc(folder.name)}" placeholder="Folder name">` : `<span>${esc(folder.name || 'Untitled folder')}</span>`}</span>
@@ -712,6 +714,45 @@ function moveProjectToTopLevel(projectId, targetType = '', targetId = '') {
   save();
   renderSidebar();
   if (currentPanel === 'overview') renderOverview();
+}
+
+function clearSidebarDragStyles() {
+  document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
+}
+
+function sidebarDropTargetAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  return el?.closest('[data-drop-project-id], [data-drop-folder-id], [data-drop-sidebar-type]') || null;
+}
+
+function updateSidebarDropTarget(x, y) {
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  const target = sidebarDropTargetAt(x, y);
+  if (!target || !sidebarDrag?.active) return null;
+  if (sidebarDrag.type === 'folder' && !target.dataset.dropSidebarType) return null;
+  target.classList.add('drop-target');
+  return target;
+}
+
+function applySidebarDrop(target) {
+  if (!target || !sidebarDrag?.active) return;
+  if (sidebarDrag.type === 'folder') {
+    if (target.dataset.dropSidebarType) reorderSidebarItem('folder', sidebarDrag.id, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
+    return;
+  }
+  if (target.dataset.dropProjectId) {
+    dropProjectOnProject(sidebarDrag.id, target.dataset.dropProjectId);
+    return;
+  }
+  if (target.dataset.dropFolderId !== undefined && target.dataset.dropFolderId) {
+    assignProjectFolder(sidebarDrag.id, target.dataset.dropFolderId);
+    return;
+  }
+  if (target.dataset.dropSidebarType) {
+    moveProjectToTopLevel(sidebarDrag.id, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
+    return;
+  }
+  if (target.dataset.dropFolderId !== undefined) moveProjectToTopLevel(sidebarDrag.id);
 }
 
 async function openProject(id, target) {
@@ -1435,6 +1476,12 @@ async function testOllama() {
 
 function bindEvents() {
   document.addEventListener('click', (event) => {
+    if (suppressNextSidebarClick) {
+      suppressNextSidebarClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const link = event.target.closest('a[href^="http://"], a[href^="https://"]');
     if (link) {
       event.preventDefault();
@@ -1538,61 +1585,51 @@ function bindEvents() {
     }
   });
 
-  document.addEventListener('dragstart', (event) => {
+  document.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.target.closest('button, input, textarea, select, a')) return;
     const projectItem = event.target.closest('[data-drag-project-id]');
-    const folderItem = event.target.closest('[data-drag-folder-id]');
-    if (projectItem && !event.target.closest('button, input')) {
-      draggedProjectId = projectItem.dataset.dragProjectId;
-      draggedFolderId = null;
-      projectItem.classList.add('dragging');
-    } else if (folderItem && !event.target.closest('button, input')) {
-      draggedFolderId = folderItem.dataset.dragFolderId;
-      draggedProjectId = null;
-      folderItem.classList.add('dragging');
-    } else {
-      return;
+    const folderHead = event.target.closest('.sidebar-folder-head');
+    const folderItem = folderHead?.closest('[data-drag-folder-id]');
+    if (projectItem) {
+      sidebarDrag = { type:'project', id:projectItem.dataset.dragProjectId, el:projectItem, startX:event.clientX, startY:event.clientY, active:false };
+    } else if (folderItem) {
+      sidebarDrag = { type:'folder', id:folderItem.dataset.dragFolderId, el:folderItem, startX:event.clientX, startY:event.clientY, active:false };
     }
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', draggedProjectId || draggedFolderId || '');
   });
 
-  document.addEventListener('dragend', () => {
-    document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
+  document.addEventListener('pointermove', (event) => {
+    if (!sidebarDrag) return;
+    const dx = event.clientX - sidebarDrag.startX;
+    const dy = event.clientY - sidebarDrag.startY;
+    if (!sidebarDrag.active && Math.hypot(dx, dy) > 6) {
+      sidebarDrag.active = true;
+      suppressNextSidebarClick = true;
+      sidebarDrag.el.classList.add('dragging');
+      document.body.classList.add('sidebar-dragging');
+    }
+    if (!sidebarDrag.active) return;
+    event.preventDefault();
+    updateSidebarDropTarget(event.clientX, event.clientY);
+  });
+
+  document.addEventListener('pointerup', (event) => {
+    if (!sidebarDrag) return;
+    const target = sidebarDrag.active ? sidebarDropTargetAt(event.clientX, event.clientY) : null;
+    if (sidebarDrag.active) {
+      event.preventDefault();
+      applySidebarDrop(target);
+    }
+    clearSidebarDragStyles();
+    document.body.classList.remove('sidebar-dragging');
+    sidebarDrag = null;
     draggedProjectId = null;
     draggedFolderId = null;
   });
 
-  document.addEventListener('dragover', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
-    if (!target || (!draggedProjectId && !draggedFolderId)) return;
-    if (draggedFolderId && !target.dataset.dropSidebarType) return;
-    event.preventDefault();
-    target.classList.add('drop-target');
-  });
-
-  document.addEventListener('dragleave', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
-    if (target) target.classList.remove('drop-target');
-  });
-
-  document.addEventListener('drop', (event) => {
-    const target = event.target.closest('[data-drop-folder-id], [data-drop-project-id], [data-drop-sidebar-type]');
-    if (!target || (!draggedProjectId && !draggedFolderId)) return;
-    event.preventDefault();
-    if (draggedFolderId && target.dataset.dropSidebarType) {
-      reorderSidebarItem('folder', draggedFolderId, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
-    } else if (draggedProjectId && target.dataset.dropProjectId) {
-      dropProjectOnProject(draggedProjectId, target.dataset.dropProjectId);
-    } else if (draggedProjectId && target.dataset.dropFolderId !== undefined && target.dataset.dropFolderId) {
-      assignProjectFolder(draggedProjectId, target.dataset.dropFolderId);
-    } else if (draggedProjectId && target.dataset.dropSidebarType) {
-      moveProjectToTopLevel(draggedProjectId, target.dataset.dropSidebarType, target.dataset.dropSidebarId);
-    } else if (draggedProjectId && target.dataset.dropFolderId !== undefined) {
-      moveProjectToTopLevel(draggedProjectId);
-    }
-    document.querySelectorAll('.dragging, .drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
-    draggedProjectId = null;
-    draggedFolderId = null;
+  document.addEventListener('pointercancel', () => {
+    clearSidebarDragStyles();
+    document.body.classList.remove('sidebar-dragging');
+    sidebarDrag = null;
   });
 }
 

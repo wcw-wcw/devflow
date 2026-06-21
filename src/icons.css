@@ -54,3 +54,4 @@
 .ti-pencil::before { content: "✎"; }
 .ti-chevron-up::before { content: "⌃"; }
 .ti-chevron-down::before { content: "⌄"; }
+.ti-chevron-right::before { content: "›"; }
