@@ -27,6 +27,7 @@ struct Project {
     local_path: Option<String>,
     repo_url: Option<String>,
     deploy_url: Option<String>,
+    folder_id: Option<String>,
     color: Option<String>,
     desc: Option<String>,
     stack: Option<String>,
